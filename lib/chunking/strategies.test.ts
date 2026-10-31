@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { fixedChunk } from "./fixed";
 import { recursiveChunk } from "./recursive";
 import { sentenceChunk, splitSentences } from "./sentence";
+import { cutsWord, segmentsFor } from "./segments";
 import { chunkStats } from "./stats";
 
 // Characters as tokens keeps fixed-size expectations exact.
@@ -104,5 +105,25 @@ describe("chunkStats", () => {
       maxTokens: 4,
       duplication: 1.2,
     });
+  });
+});
+
+describe("segmentsFor", () => {
+  it("splits text into stretches with their chunk and overlap count", () => {
+    const segs = segmentsFor(10, [
+      { startChar: 0, endChar: 6 },
+      { startChar: 4, endChar: 9 },
+    ]);
+    expect(segs).toEqual([
+      { start: 0, end: 4, chunk: 0, cover: 1 },
+      { start: 4, end: 6, chunk: 0, cover: 2 },
+      { start: 6, end: 9, chunk: 1, cover: 1 },
+      { start: 9, end: 10, chunk: null, cover: 0 },
+    ]);
+  });
+
+  it("spots a cut through the middle of a word", () => {
+    expect(cutsWord("retrieval", 4)).toBe(true);
+    expect(cutsWord("two words", 3)).toBe(false);
   });
 });
