@@ -29,6 +29,10 @@ export const documents = pgTable("documents", {
   sourceType: text("source_type").notNull(), // 'pdf' | 'md' | 'txt'
   rawText: text("raw_text").notNull(),
   tokenCount: integer("token_count").notNull(),
+  // sha256 of the extracted text. Re-uploading the same content replaces the
+  // old copy instead of duplicating every chunk in search results.
+  contentHash: text("content_hash").unique(),
+  pageCount: integer("page_count"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 });
 
