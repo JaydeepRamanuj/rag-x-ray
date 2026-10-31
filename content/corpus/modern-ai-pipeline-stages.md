@@ -134,12 +134,12 @@ Failures found in production become new eval items, so the eval set grows with t
 
 ## How the parts connect
 
-| Layer | Who builds it | Main concerns |
-| --- | --- | --- |
-| Data and pretraining | Model labs | Data quality, compute, scaling |
-| Post-training and safety | Model labs | Helpfulness, reasoning, harmlessness |
-| Inference and serving | Labs, cloud providers, inference companies | Latency, throughput, cost per token |
-| Gateways and routing | Platform teams | Rate limits, failover, model choice |
-| Application pipeline | Product engineers | Context, retrieval, tools, guardrails, evals |
+| Layer                    | Who builds it                              | Main concerns                                |
+| ------------------------ | ------------------------------------------ | -------------------------------------------- |
+| Data and pretraining     | Model labs                                 | Data quality, compute, scaling               |
+| Post-training and safety | Model labs                                 | Helpfulness, reasoning, harmlessness         |
+| Inference and serving    | Labs, cloud providers, inference companies | Latency, throughput, cost per token          |
+| Gateways and routing     | Platform teams                             | Rate limits, failover, model choice          |
+| Application pipeline     | Product engineers                          | Context, retrieval, tools, guardrails, evals |
 
 An application engineer rarely trains a model, but knowledge of the lower layers explains the behaviour seen at the top: why output tokens cost more than input tokens (decode is memory-bound), why long prompts are slow (prefill and quadratic attention), why caching a prefix is cheap (the KV cache), why models invent facts (next-token training on a fixed corpus), and why retrieval and evals are the developer's main levers on quality.

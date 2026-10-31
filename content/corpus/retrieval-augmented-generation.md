@@ -40,13 +40,13 @@ Embedding models and prompts work best on passages, not whole documents, so text
 
 Common strategies:
 
-| Strategy | How it splits | Strength | Weakness |
-| --- | --- | --- | --- |
-| **Fixed-size** | Every N tokens, often with overlap | Simple, predictable sizes | Cuts mid-sentence and mid-idea |
-| **Recursive** | Tries paragraph breaks first, then lines, then sentences, then words, until pieces fit the size | Respects document structure; a good default | Still unaware of meaning |
-| **Sentence-based** | Groups whole sentences up to a size | Never cuts a sentence | Uneven sizes; sentence detection fails on abbreviations |
-| **Semantic** | Embeds sentences and cuts where similarity between neighbours drops | Chunks follow topic changes | Costs an embedding pass; sensitive to its threshold |
-| **Structure-aware** | Splits on headings, functions, or table rows | Matches how the document is organized | Needs a parser per format |
+| Strategy            | How it splits                                                                                   | Strength                                    | Weakness                                                |
+| ------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------- | ------------------------------------------------------- |
+| **Fixed-size**      | Every N tokens, often with overlap                                                              | Simple, predictable sizes                   | Cuts mid-sentence and mid-idea                          |
+| **Recursive**       | Tries paragraph breaks first, then lines, then sentences, then words, until pieces fit the size | Respects document structure; a good default | Still unaware of meaning                                |
+| **Sentence-based**  | Groups whole sentences up to a size                                                             | Never cuts a sentence                       | Uneven sizes; sentence detection fails on abbreviations |
+| **Semantic**        | Embeds sentences and cuts where similarity between neighbours drops                             | Chunks follow topic changes                 | Costs an embedding pass; sensitive to its threshold     |
+| **Structure-aware** | Splits on headings, functions, or table rows                                                    | Matches how the document is organized       | Needs a parser per format                               |
 
 **Overlap** repeats a few tokens (often 10–15% of the chunk size) from the end of one chunk at the start of the next, so a fact that straddles a boundary survives in at least one chunk. Typical starting points are 200 to 500 tokens per chunk with 10–20% overlap. The best size depends on the documents and the questions, which is why it should be measured with an eval set rather than guessed.
 

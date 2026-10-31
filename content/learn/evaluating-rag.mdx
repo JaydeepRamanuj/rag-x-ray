@@ -1,0 +1,86 @@
+# Lesson 10: Evaluating RAG
+
+## The idea
+
+Every earlier lesson changed one setting and looked at one query. That's how you build intuition, and it's also how you fool yourself: a change that fixes the query in front of you can break three you aren't looking at. An **eval set** is a fixed list of questions with known answers that you run against every configuration, so "better" means a number went up across all of them.
+
+RAG has two halves that fail differently, so it gets two kinds of metrics:
+
+- **Retrieval**: did the right passage reach the prompt? Measured with **hit rate@k** and **MRR**. No LLM needed, so it's fast, free and deterministic.
+- **Generation**: given what was retrieved, was the answer good? Measured with **faithfulness** and **answer relevance**, graded by a stronger model acting as a judge (**LLM-as-a-judge**).
+
+Most RAG failures are retrieval failures. If the passage isn't in the top k, the best model in the world can only say "the sources don't cover this".
+
+## How it works
+
+**The eval item.** Each item has a question, an expected answer, and the **source passage**: a sentence or two copied from the document that contains the answer. It's stored as text, not as a chunk id, because chunk ids change every time you re-chunk.
+
+**A hit.** A retrieved chunk counts as a hit if it contains most of the source passage. "Most" is measured on word trigrams: lowercase both texts, strip punctuation and markdown, and count how many of the passage's three-word sequences appear in the chunk. At 60% or more, it's a hit. Trigrams make the match survive different whitespace, `**bold**` markers and a chunk boundary cutting off the last few words.
+
+**Hit rate@k** is the share of questions where a hit appears anywhere in the top k. **MRR** (mean reciprocal rank) also cares where: each question scores 1 divided by the rank of its first hit (1, 0.5, 0.33…, or 0 for a miss), averaged over all questions. Two systems with the same hit rate can differ in MRR, and MRR is the one that predicts what the model reads first.
+
+```text
+ranks of the first hit:   1   2   miss   4
+hit rate@5 = 3/4 = 0.75
+MRR        = (1 + 0.5 + 0 + 0.25) / 4 = 0.44
+```
+
+**Faithfulness** asks whether every claim in the answer is supported by the retrieved sources. An answer can be true and still unfaithful, if it came from the model's own memory rather than the sources. **Answer relevance** asks whether the answer addresses the question. Each is graded 1–5 against a written rubric, with the judge's reasoning written before the score so the score has to follow from it.
+
+**LLM-as-a-judge pitfalls.** Judges favour longer answers, answers in their own style, and the first of two options; they're also lenient by default. Mitigations: a small fixed scale with a description of each score, reasoning before the score, temperature 0, and reading a sample of the judge's verdicts yourself.
+
+## In this app
+
+- [`lib/evals/metrics.ts`](https://github.com/JaydeepRamanuj/rag-x-ray/blob/main/lib/evals/metrics.ts): the trigram matcher, `firstHitRank()`, `summarize()` for hit rate, MRR and mean judge scores, and `compareRank()` for the compare view. All pure and unit-tested.
+- [`lib/evals/judge.ts`](https://github.com/JaydeepRamanuj/rag-x-ray/blob/main/lib/evals/judge.ts): the rubric, and a parser that tolerates code fences, bare arrays and missing cases. The judge is asked for JSON with `responseMimeType: "application/json"`, added to the Gemini adapter for this.
+- **Five answers per judge call.** The judge, Gemini 3.8 Flash, allows **20 requests a day** and 5 a minute on this project's free tier. One call per answer would need 25 calls for one run. Batching makes it 5, so four full runs fit in a day. The cost is that answers share a context; each case carries its own sources and the rubric says to grade each on its own.
+- **The browser drives a run.** A full run takes several minutes: one question at a time, 4.5 s apart for Flash-Lite's 15 requests a minute, 6.5 s apart when reranking (Cohere's 10 a minute), 12.5 s between judge calls. That's longer than a Vercel function may run, so the page sends one step per request (`item`, `judge`, `finish`) and the server saves results after each. A closed tab leaves a run "unfinished" with a **Resume** button; a finished run whose judge calls failed gets **Complete**.
+- **Retrieval-only mode** makes zero chat calls. It's the cheap way to compare chunking and retrieval settings; spend the judge's quota only on runs that change what the model sees.
+- Eval calls don't write to `runs`, so the token ledger's daily chart reads them from `eval_runs` and stacks them as **Eval requests** on the model they used.
+
+## Try it
+
+1. Open [Evals](/evals). Run **Retrieval only** with **vector**, labelled "baseline".
+2. Run it again with **hybrid**, then **hybrid** with **Rerank** on.
+3. Tick two runs and read the **Compare** panel: which questions were fixed, which moved up, and did anything break?
+4. Click a run, then a question, to see each retrieved chunk's coverage of the source passage, and **open in the arena** to see why it ranked where it did.
+
+## What you should see
+
+The eval set has 25 questions over seven documents: the build plan, the pgvector notes, and five longer AI notes. Retrieval-only runs at k = 5 on recursive chunks:
+
+| Run             | Hit rate | MRR  | Misses                                 |
+| --------------- | -------- | ---- | -------------------------------------- |
+| Vector          | 88%      | 0.83 | HyDE, the RRF merge, the BM25 stand-in |
+| Keyword         | 92%      | 0.77 | the RRF merge, the BM25 stand-in       |
+| Hybrid          | 92%      | 0.88 | the RRF merge, the BM25 stand-in       |
+| Hybrid + rerank | 100%     | 0.98 | none; one answer ranked 2nd            |
+
+Keyword finds more answers than vector but ranks them worse (MRR 0.77), because a word like "model" matches everywhere. Hybrid keeps keyword's extra hit (HyDE, a rare word that embeddings blur) and vector's ordering. The two questions only rerank fixes have their answers in the same chunk: the build plan's tech-decisions table. "What does RAG X-Ray use instead of BM25 for keyword search?" is answered by one row, "Postgres full-text search … as a BM25 stand-in", in a chunk of a dozen rows about other things, so neither its vector nor its words stand out. The cross-encoder reads the question and the chunk together and finds the row.
+
+Full runs answer with Gemini 3.5 Flash-Lite and judge with Gemini 3.8 Flash:
+
+| Run               | Hit rate | MRR  | Faithfulness | Relevance | Answers judged |
+| ----------------- | -------- | ---- | ------------ | --------- | -------------- |
+| Vector (baseline) | 88%      | 0.83 | 5.0/5        | 4.88/5    | 25 of 25       |
+| Hybrid + rerank   | 100%     | 0.98 | 5.0/5        | 5.0/5     | 5 of 25        |
+
+The baseline's one low score is relevance 2/5 on "What is HyDE?": vector search missed the passage, and the model correctly said the sources didn't cover it. That's the right behaviour and still a failed answer, which is why retrieval is measured first. Hybrid + rerank retrieves that passage at rank 1.
+
+Faithfulness was 5/5 on every judged answer in both runs. That's the grounding prompt working (no answer claimed more than its sources), but it's also a sign this judge is lenient: a metric that never moves can't tell you anything.
+
+**The judge ran out.** Single judge calls took **32 to 187 seconds** even without retries, and some failed with `503 This model is currently experiencing high demand`. The second full run hit `429 … Generate content requests per day limit exceeded … limit: 20` after only six successful judge calls that day, so the retried 503s seem to count against the daily quota too. Its other 20 answers are saved and can be judged with **Complete** after the quota resets at midnight Pacific. The compare view only averages judge scores over questions judged in both runs, so it doesn't mistake 5 easy answers for an improvement.
+
+## Interview angle
+
+- **"How do you evaluate a RAG system?"** Separately for retrieval and generation. Retrieval: hit rate@k and MRR (or nDCG) on a labelled question set; no LLM needed. Generation: faithfulness and answer relevance with an LLM judge, spot-checked by a human. Change one setting at a time and compare runs on the same set.
+- **"How do you label the right chunk if you re-chunk?"** Don't label chunks. Store the source passage as text and match it against whatever chunks exist, with a fuzzy overlap threshold.
+- **"Can you trust an LLM judge?"** Partly. Use a rubric, reasoning before score, a stronger model than the one being judged, temperature 0, and check its agreement with your own grades on a sample. Watch for ceiling effects: if every answer gets 5/5, the judge isn't discriminating.
+- **"Your eval improved. Ship it?"** Check that the improvement is larger than run-to-run noise, look at which items changed (fixes vs regressions), and re-run on questions the change wasn't designed for.
+
+## Go deeper
+
+- [Es et al. (2023): RAGAS, automated evaluation of RAG](https://arxiv.org/abs/2309.15217)
+- [Zheng et al. (2023): Judging LLM-as-a-judge with MT-Bench and Chatbot Arena](https://arxiv.org/abs/2306.05685)
+- [Anthropic: Contextual retrieval](https://www.anthropic.com/news/contextual-retrieval), whose numbers are reported as retrieval failure rates at top 20
+- [Hamel Husain: Your AI product needs evals](https://hamel.dev/blog/posts/evals/)

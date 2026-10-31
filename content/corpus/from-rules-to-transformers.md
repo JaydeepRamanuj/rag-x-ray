@@ -87,15 +87,15 @@ OpenAI's **InstructGPT** paper (published March 2022) applied **reinforcement le
 
 ## What came after, and the problems each step addressed
 
-| Problem | Fix | When |
-| --- | --- | --- |
-| Models only know their training data and invent facts | **Retrieval-augmented generation (RAG)**: fetch relevant documents and put them in the prompt (Lewis et al., 2020; mainstream from 2023) | 2020–2023 |
-| Models cannot act or fetch live data | **Tool calling / function calling**: the model emits a structured request, your code runs it and returns the result (ReAct paper 2022; OpenAI function calling June 2023) | 2022–2023 |
-| Every app wires up tools differently | **Model Context Protocol (MCP)**, an open standard for connecting models to tools and data, released by Anthropic in November 2024 | 2024 |
-| Short context windows | Better position encodings (RoPE scaling), FlashAttention, and context windows from 4k up to 1M+ tokens | 2023–2025 |
-| Training and serving costs | Mixture-of-experts models, quantization (8-bit and 4-bit weights), distillation into small models | 2023–2025 |
-| Weak multi-step reasoning | **Reasoning models** trained with reinforcement learning to think step by step before answering (OpenAI o1, Sept 2024; DeepSeek-R1, Jan 2025) | 2024–2025 |
-| Single answers are not enough for long tasks | **Agents**: models in a loop that plan, call tools, observe results and continue, built with frameworks such as LangGraph | 2024–2026 |
+| Problem                                               | Fix                                                                                                                                                                       | When      |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
+| Models only know their training data and invent facts | **Retrieval-augmented generation (RAG)**: fetch relevant documents and put them in the prompt (Lewis et al., 2020; mainstream from 2023)                                  | 2020–2023 |
+| Models cannot act or fetch live data                  | **Tool calling / function calling**: the model emits a structured request, your code runs it and returns the result (ReAct paper 2022; OpenAI function calling June 2023) | 2022–2023 |
+| Every app wires up tools differently                  | **Model Context Protocol (MCP)**, an open standard for connecting models to tools and data, released by Anthropic in November 2024                                        | 2024      |
+| Short context windows                                 | Better position encodings (RoPE scaling), FlashAttention, and context windows from 4k up to 1M+ tokens                                                                    | 2023–2025 |
+| Training and serving costs                            | Mixture-of-experts models, quantization (8-bit and 4-bit weights), distillation into small models                                                                         | 2023–2025 |
+| Weak multi-step reasoning                             | **Reasoning models** trained with reinforcement learning to think step by step before answering (OpenAI o1, Sept 2024; DeepSeek-R1, Jan 2025)                             | 2024–2025 |
+| Single answers are not enough for long tasks          | **Agents**: models in a loop that plan, call tools, observe results and continue, built with frameworks such as LangGraph                                                 | 2024–2026 |
 
 ## The pattern
 

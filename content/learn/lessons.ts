@@ -88,7 +88,7 @@ export const lessons: Lesson[] = [
     title: "Evaluating RAG",
     summary: "Hit rate, MRR, faithfulness, LLM-as-judge pitfalls.",
     phase: 5,
-    written: false,
+    written: true,
   },
   {
     slug: "caching-and-cost",

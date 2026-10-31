@@ -133,3 +133,29 @@ Open [`/api/health`](/api/health) twice, a few seconds apart, after the app has 
 - **Hybrid beats vector on exact names.** For "umap-js", Gemini vector search's top 3 contains none of the three chunks that mention it; keyword and hybrid return all three.
 - **Rerank fixes the order.** For "Which library draws the 2D projection, and where does it run?", the answer chunk is 2nd in vector (0.616 against 0.619 for a wrong chunk) and 3rd in hybrid. Rerank puts it 1st at 0.644, with the next at 0.219.
 - At size 400, fixed splitting cut 32 of 416 sentences; recursive, sentence and semantic cut none. The cost of overlap is visible as stored / source: 1.11× for fixed at 10%, 1.25× at 20%.
+
+## Phase 5: Eval mode (31 Oct 2026)
+
+**What was built:** five learning documents on how LLMs generate text, the history from rules to Transformers, RAG, LangChain and LangGraph, and the stages of a modern AI pipeline (in `content/corpus/`, uploaded like any other document), and a 25-question eval set drawn from them and the build plan. The [Evals](/evals) page runs the set against one configuration at a time, in retrieval-only mode (hit rate and MRR, no LLM) or full mode (answers plus an LLM judge for faithfulness and relevance), with run history, per-question drill-down and a compare view. Lesson [10](/learn/evaluating-rag).
+
+### Decisions
+
+- **The corpus was written for this.** The library had two documents and 18 chunks, where every setting scores near 100% and nothing can be measured. Five longer documents (46 chunks) give vector, keyword, hybrid and rerank room to differ, and double as reading material.
+- **Hits are matched on text, not chunk ids.** Each item stores its source passage; a chunk is a hit when it contains at least 60% of the passage's word trigrams. On the active chunks, every passage matched exactly one chunk at 100%, and the next-best chunk reached 17% at most, so the threshold sits far from both.
+- **The judge grades five answers per call.** Gemini 3.8 Flash's free tier on this project is 5 requests a minute and **20 a day**. One call per answer would need 25 for a single run.
+- **The browser drives each run, one step per request.** A full run took 5 to 12 minutes, mostly waiting on rate limits and the judge, far past a Vercel function's limit. Each step saves to `eval_runs`, so a closed tab leaves a run that can be resumed. Migration `0006_eval_runs_status` (applied) adds `status`, `error`, `cost_usd` and `finished_at` to `eval_runs`, and `ordinal` to `eval_items`.
+- **Eval calls stay out of `runs`.** Totals live on `eval_runs`; the ledger's daily chart unnests each run's answer and judge calls and stacks them as **Eval requests**, because they still spend the same daily quota.
+- **Chunk sets are resolved when a run starts.** "Active" or a strategy becomes a list of chunk set ids stored in the run's config, so changing the active set later doesn't change what an old run claims to have searched. A strategy that some document lacks is refused rather than mixed.
+
+### What broke
+
+- **Gemini 3.8 Flash was slow and overloaded.** Single judge calls took 32–187 s with no retries, and one batch failed after three `503 This model is currently experiencing high demand`. The step route's limit went from 120 s to 300 s, the page retries a failed batch once after a pause, and a finished run with unjudged answers gets a **Complete** button that reopens it.
+- **The judge's 20 requests a day ran out during the second full run**, after six successful judge calls that day, so retried 503s seem to count against the quota. The page now stops judging on a daily-quota 429 instead of retrying, and the compare view averages judge scores only over questions judged in both runs.
+- **A dev server compiled mid-edit served a half-built page.** The evals page failed inside Drizzle with "Cannot convert undefined or null to object" while the same query worked in a route and in a script; a later recompile fixed it with no code change.
+
+### What to notice
+
+- **Retrieval only, k = 5:** vector 88% hit rate / 0.83 MRR, keyword 92% / 0.77, hybrid 92% / 0.88, hybrid + rerank 100% / 0.98. Keyword finds more answers than vector but ranks them lower; hybrid keeps both strengths; only rerank finds the two answers hidden in one row each of the build plan's tech-decisions table.
+- **Full baseline (vector):** faithfulness 5.0/5 and relevance 4.88/5 over 25 answers, 105,186 tokens, $0.064 at list price. The one low relevance score was the question whose passage vector search missed: the model said the sources didn't cover it, which is the right behaviour and still a failed answer.
+- **Full hybrid + rerank:** hit rate 100% and MRR 0.98; three questions fixed and two ranked higher than the baseline, none worse. Only 5 of its 25 answers were judged before the quota ran out (5.0/5 on both scores).
+- **The judge never gave less than 5 for faithfulness.** That's a lenient judge or a well-grounded prompt, and the eval can't tell which; relevance and the retrieval metrics are what moved.
