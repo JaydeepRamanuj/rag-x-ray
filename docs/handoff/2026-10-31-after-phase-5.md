@@ -14,7 +14,7 @@ Read this together with [the build plan](../RAG%20X-Ray%20—%20Build%20Plan.md)
 
 Merging: once Jd approves, fast-forward `main` to `phase-5-evals`. Only push or merge when Jd says so.
 
-Checks on `phase-5-evals`: `pnpm lint`, `pnpm typecheck`, `pnpm format:check`, `pnpm test` (123 tests) pass. **`pnpm build` was not run**: a `next start` server on port 3000 serves this folder's `.next`, and a build would replace its files under it. Run it once that server is stopped.
+Checks on `phase-5-evals`: `pnpm lint`, `pnpm typecheck`, `pnpm format:check`, `pnpm test` (124 tests) pass. **`pnpm build` was not run**: a `next start` server on port 3000 serves this folder's `.next`, and a build would replace its files under it. Run it once that server is stopped.
 
 ## What Phase 5 added
 
@@ -58,3 +58,35 @@ Retrieval improvement (the "Done when"): hybrid + rerank over the vector baselin
 - Faithfulness was 5/5 on every judged answer; the judge may be too lenient to discriminate. A stricter rubric or claim-by-claim checking (RAGAS-style) is a possible follow-up.
 - Query embeddings for evals aren't counted in eval totals (they're tiny and cached).
 - Earlier open items from the Phase 4 handoff still stand.
+
+## Environment facts
+
+- Two Next servers point at this folder: **`next dev` on 3124** (another session's; use it rather than `preview_start`, Next 16 allows one dev server per folder) and an old **`next start` on 3000** that still shows the Phase 0 placeholder pages. Ask Jd before stopping either.
+- To format while the dev server runs, pipe one file at a time through `pnpm exec prettier --stdin-filepath <f> < <f>` and write the result back; `pnpm format:check` is fine.
+- Disk: about 1.8 GB free on `/home/jd/work`. Install with `--store-dir /home/jd/work/.pnpm-store`.
+- Today's (31 Oct) Gemini 3.8 Flash quota is used up; it resets at midnight Pacific.
+
+## Phase 6 scope (from the build plan)
+
+- **Embedding explorer** at `/lab/embeddings` (currently a placeholder): every chunk as a dot in 2D, coloured by document; a typed query appears as a star linked to its 5 nearest chunks. Controls: Gemini vs local model, 768 vs 256 dimensions, UMAP vs PCA (`umap-js` in the browser, PCA as fallback). A similarity playground: two sentences and their cosine similarity (synonyms, negation, languages).
+- **Library comparison:** rewrite `/api/chat` with the Vercel AI SDK on a separate route and compare the code side by side. This is the first phase where the AI SDK is allowed.
+- **Lessons 12** (libraries vs hand-rolled) and **13** (the full pipeline, one request traced end to end with real timings), plus the Phase 6 entry in lesson 14 (process log).
+- **README** with an architecture diagram and screenshots.
+- **Done when:** the Learn page is complete and the app is portfolio-ready.
+
+Things to ask Jd before starting:
+
+- Have phases 4 and 5 been reviewed? Should `main` be fast-forwarded and pushed first?
+- The 256-dimension Gemini option means new vectors (Matryoshka truncation of the stored 768, or a re-embed). Truncate in the browser, or store a column?
+- Which AI SDK version and provider packages (check current docs), and should the AI SDK route also be recorded in `runs` and the ledger?
+- Should the README screenshots come from the deployed app, which needs Vercel and the local-embeddings size question settled (see the Phase 4 handoff)?
+- Re-judge the second full eval run (**Complete (4)** on `/evals`) once the quota resets?
+
+## How Jd likes to work
+
+- One phase at a time. At "Done when", stop, summarise what was built and what to test, and wait.
+- Ask clarifying questions in one batch before starting, and propose a task list.
+- Probe live APIs with tiny calls before trusting docs, and record surprises in the process log.
+- Small Conventional Commits on the phase branch with the Co-Authored-By trailer; push only when asked.
+- Avoid subagents (the web-fetch helper for reading docs is fine).
+- Each phase writes its lessons (idea, how it works, in this app, try it, what you should see, interview angle, go deeper) using real numbers from the app, plus a process-log entry.
