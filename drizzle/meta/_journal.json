@@ -29,6 +29,13 @@
       "when": 1793431496467,
       "tag": "0003_documents_hash",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793436154718,
+      "tag": "0004_ledger_usage",
+      "breakpoints": true
     }
   ]
 }

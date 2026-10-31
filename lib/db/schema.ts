@@ -100,6 +100,9 @@ export const runs = pgTable("runs", {
   inputTokens: integer("input_tokens"),
   outputTokens: integer("output_tokens"),
   cachedTokens: integer("cached_tokens"),
+  // Thinking tokens, a subset of output_tokens. Billed as output but never
+  // shown, so the ledger splits them out to show what reasoning costs.
+  reasoningTokens: integer("reasoning_tokens"),
   ttftMs: integer("ttft_ms"),
   totalMs: integer("total_ms"),
   // numeric, not float: money should not pick up binary rounding errors.
@@ -124,6 +127,25 @@ export const runChunks = pgTable(
   // A chunk can appear once per retrieval method in the same run.
   (t) => [primaryKey({ columns: [t.runId, t.chunkId, t.method] })],
 );
+
+// One row per upload that reached the embedding step. Queries are counted in
+// runs.embed_tokens; this covers ingestion, so the ledger's daily chart sees
+// every embedding call, not just the ones made while chatting.
+export const ingestUsage = pgTable("ingest_usage", {
+  id: uuid().primaryKey().defaultRandom(),
+  // Kept when the document is deleted: the quota was used either way.
+  documentId: uuid("document_id").references(() => documents.id, { onDelete: "set null" }),
+  title: text().notNull(),
+  status: text().notNull(), // 'ok' | 'error'
+  chunks: integer().notNull(),
+  cacheHits: integer("cache_hits").notNull(),
+  // Local estimate: the embeddings API reports no usage.
+  embedTokens: integer("embed_tokens").notNull(),
+  // batchEmbedContents calls made, i.e. requests against the daily quota.
+  requests: integer().notNull(),
+  totalMs: integer("total_ms"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
 
 export const evalItems = pgTable("eval_items", {
   id: uuid().primaryKey().defaultRandom(),

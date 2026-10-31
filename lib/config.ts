@@ -66,8 +66,9 @@ export const chatModels = {
     label: "Gemini 3.5 Flash-Lite",
     reasoning: "minimal",
     price: { input: 0.3, cachedInput: 0.03, output: 2.5 },
-    // Google no longer publishes fixed free-tier numbers; AI Studio shows them.
-    free: {},
+    // Google no longer publishes fixed free-tier numbers. These are what AI
+    // Studio showed for Jd's project on 2026-10-31; yours may differ.
+    free: { rpm: 15, tpm: 250_000, rpd: 500 },
   },
   // Stronger model used as the eval judge (Phase 5).
   // Introductory price; rises to $1.50 / $7.50 on 2027-01-01 per Google's schedule.
@@ -78,6 +79,7 @@ export const chatModels = {
     // Rejects "minimal" with a 400; "low" is its floor.
     reasoning: "low",
     price: { input: 0.75, cachedInput: 0.075, output: 3.75 },
+    // Not recorded yet: check AI Studio and fill in.
     free: {},
   },
   // Replaces llama-3.1-8b-instant, which Groq shut down on 2026-08-16.
