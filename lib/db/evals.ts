@@ -131,6 +131,14 @@ export async function finishEvalRun(
     .where(eq(evalRuns.id, id));
 }
 
+/** Puts a finished run back to "running" so missing steps can be sent again. */
+export async function reopenEvalRun(id: string): Promise<void> {
+  await getDb()
+    .update(evalRuns)
+    .set({ status: "running", error: null, finishedAt: null })
+    .where(eq(evalRuns.id, id));
+}
+
 export async function deleteEvalRun(id: string): Promise<boolean> {
   const rows = await getDb()
     .delete(evalRuns)

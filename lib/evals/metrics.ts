@@ -99,3 +99,33 @@ export function compareRank(before: number | null, after: number | null): ItemCh
   if (before && after && after > before) return "worse";
   return "same";
 }
+
+type Judged = { itemId: string; faithfulness?: number | null; relevance?: number | null };
+
+function isJudged(i: Judged): boolean {
+  return typeof i.faithfulness === "number" || typeof i.relevance === "number";
+}
+
+export function judgedCount(items: Judged[]): number {
+  return items.filter(isJudged).length;
+}
+
+/**
+ * Judge averages for two runs over only the questions judged in both. When
+ * one run's judge calls failed partway, comparing its average over 5
+ * answers with another's over 25 would compare different questions.
+ */
+export function pairedJudgeScores(a: Judged[], b: Judged[]) {
+  const inB = new Map(b.filter(isJudged).map((i) => [i.itemId, i]));
+  const pairs = a.filter(isJudged).flatMap((i) => {
+    const other = inB.get(i.itemId);
+    return other ? [[i, other] as const] : [];
+  });
+  const avg = (side: 0 | 1, key: "faithfulness" | "relevance") =>
+    mean(pairs.map((p) => p[side][key]).filter((v): v is number => typeof v === "number"));
+  return {
+    count: pairs.length,
+    faithfulness: [avg(0, "faithfulness"), avg(1, "faithfulness")] as const,
+    relevance: [avg(0, "relevance"), avg(1, "relevance")] as const,
+  };
+}

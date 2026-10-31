@@ -174,6 +174,8 @@ export const limits = {
   embedTokensPerMinute: 25_000,
   /** Eval mode runs one question at a time with this delay to stay under RPM. */
   evalDelayMs: 4_000,
+  /** Answers graded per judge call; the judge model allows only 20 requests a day. */
+  judgeBatchSize: 5,
   retry: { maxAttempts: 4, baseDelayMs: 1_000, maxDelayMs: 30_000 },
 } as const;
 

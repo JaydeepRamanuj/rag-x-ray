@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   compareRank,
+  judgedCount,
+  pairedJudgeScores,
   firstHitRank,
   isHit,
   reciprocalRank,
@@ -105,5 +107,25 @@ describe("reciprocalRank and compareRank", () => {
     expect(compareRank(1, 2)).toBe("worse");
     expect(compareRank(2, 2)).toBe("same");
     expect(compareRank(null, null)).toBe("same");
+  });
+});
+
+describe("pairedJudgeScores", () => {
+  it("averages only questions judged in both runs", () => {
+    const a = [
+      { itemId: "1", faithfulness: 5, relevance: 2 },
+      { itemId: "2", faithfulness: 4, relevance: 4 },
+      { itemId: "3", faithfulness: 3, relevance: 3 },
+    ];
+    const b = [
+      { itemId: "1", faithfulness: 5, relevance: 5 },
+      { itemId: "2" },
+      { itemId: "3", faithfulness: 5, relevance: 5 },
+    ];
+    const p = pairedJudgeScores(a, b);
+    expect(p.count).toBe(2);
+    expect(p.faithfulness).toEqual([4, 5]);
+    expect(p.relevance).toEqual([2.5, 5]);
+    expect(judgedCount(b)).toBe(2);
   });
 });

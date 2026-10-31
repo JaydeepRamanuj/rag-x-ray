@@ -7,6 +7,7 @@ import {
   getChunkTexts,
   getEvalItems,
   listEvalItems,
+  reopenEvalRun,
   saveEvalResults,
 } from "@/lib/db/evals";
 import { getProvider, type Usage } from "@/lib/llm";
@@ -194,7 +195,9 @@ export async function judgeItems(run: EvalRunRow, itemIds: string[]): Promise<Ju
       // Room for the judge's thinking plus a short verdict per case.
       maxOutputTokens: 8_192,
       json: true,
+      onRetry: (r) => (call.retries ??= []).push({ status: r.status, delayMs: r.delayMs }),
     });
+    call.attempts = reply.attempts;
     call.usage = usageOf(model.id, reply.usage);
     const verdicts = parseJudgeReply(reply.text, caseIds);
     if (verdicts.size < targets.length) {
@@ -228,6 +231,15 @@ export function runTotals(run: EvalRunRow): { totalTokens: number; costUsd: numb
     totalTokens: usages.reduce((s, u) => s + u.inputTokens + u.outputTokens, 0),
     costUsd: usages.reduce((s, u) => s + u.costUsd, 0),
   };
+}
+
+/**
+ * Reopens a finished run whose judge calls failed (Gemini Flash answers 503
+ * "high demand" at busy times), so the browser can send the missing steps.
+ */
+export async function reopenRun(run: EvalRunRow): Promise<void> {
+  if (run.status === "running") return;
+  await reopenEvalRun(run.id);
 }
 
 /** Scores whatever was completed. A run with no completed items is marked as an error. */

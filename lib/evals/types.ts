@@ -76,6 +76,9 @@ export type JudgeCall = {
   model: string;
   usage: TokenUsage;
   ms: number;
+  /** HTTP attempts, and the status of each failed one (429, 503...). */
+  attempts?: number;
+  retries?: { status: number; delayMs: number }[];
   error?: string;
 };
 
