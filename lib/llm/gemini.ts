@@ -40,6 +40,7 @@ export function toGeminiBody(params: ChatParams) {
       temperature: params.temperature,
       maxOutputTokens: params.maxOutputTokens,
       thinkingConfig: { thinkingLevel: params.model.reasoning },
+      ...(params.json && { responseMimeType: "application/json" }),
     },
   };
 }

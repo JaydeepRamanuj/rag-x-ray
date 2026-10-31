@@ -151,6 +151,8 @@ export const ingestUsage = pgTable("ingest_usage", {
 
 export const evalItems = pgTable("eval_items", {
   id: uuid().primaryKey().defaultRandom(),
+  /** Display order; items are imported as a batch, so created_at can't order them. */
+  ordinal: integer().notNull().default(0),
   question: text().notNull(),
   expectedAnswer: text("expected_answer").notNull(),
   // The passage holding the answer, stored as text rather than a chunk id so
@@ -161,11 +163,19 @@ export const evalItems = pgTable("eval_items", {
 export const evalRuns = pgTable("eval_runs", {
   id: uuid().primaryKey().defaultRandom(),
   config: jsonb().notNull(),
-  results: jsonb().notNull(), // per item: retrieved ids, hit, faithfulness, judge reason
+  // { items: per-item retrieval, answer and judgement; judgeCalls: one per batch }
+  results: jsonb().notNull(),
+  // The browser drives a run one step at a time, so a run can be left
+  // half done: "running" until finished, then "done" or "error".
+  status: text().notNull().default("running"),
+  error: text(),
   hitRate: real("hit_rate"),
   mrr: real(),
   faithfulness: real(),
   answerRelevance: real("answer_relevance"),
   totalTokens: integer("total_tokens"),
+  /** What the answer and judge calls would cost on the paid tier. */
+  costUsd: real("cost_usd"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
 });

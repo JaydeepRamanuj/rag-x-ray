@@ -25,6 +25,7 @@ export function toGroqBody(params: ChatParams) {
     // GPT-OSS returns its reasoning text unless told not to. We still see
     // the count in usage.completion_tokens_details.reasoning_tokens.
     include_reasoning: false,
+    ...(params.json && { response_format: { type: "json_object" } }),
     stream: true,
     // Without this, a streamed response carries no token usage at all.
     stream_options: { include_usage: true },

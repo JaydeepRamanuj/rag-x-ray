@@ -1,0 +1,127 @@
+[
+  {
+    "question": "Why are output tokens usually priced several times higher than input tokens?",
+    "expectedAnswer": "Input tokens are processed in one parallel prefill pass, which GPUs handle efficiently. Output tokens are generated one at a time in the decode phase, which is limited by memory bandwidth rather than compute, so each output token is more expensive to produce.",
+    "sourceText": "Each step is small, so decode is limited by memory bandwidth rather than compute. This is why output tokens are priced several times higher than input tokens on almost every API."
+  },
+  {
+    "question": "What does the KV cache store, and why is it needed?",
+    "expectedAnswer": "It stores each token's key and value vectors from every layer so they are computed once, instead of recomputing them for all earlier tokens at every decoding step. It grows linearly with context length.",
+    "sourceText": "The **KV cache** stores each token's key and value vectors from every layer so they are computed once. The cache grows linearly with context length and is often the main memory cost of serving long conversations."
+  },
+  {
+    "question": "How does top-p sampling decide which tokens to sample from?",
+    "expectedAnswer": "It keeps the smallest set of tokens whose probabilities add up to p (for example 0.9) and samples among them, so the set grows when the model is unsure and shrinks when it is confident.",
+    "sourceText": "**Top-p (nucleus) sampling** keeps the smallest set of tokens whose probabilities add up to p, for example 0.9, then samples among them. The set grows when the model is unsure and shrinks when it is confident."
+  },
+  {
+    "question": "What is the difference between a mixture-of-experts model's total parameters and its active parameters?",
+    "expectedAnswer": "A router sends each token to only a few expert feed-forward networks, so the model holds many parameters in total but each token only uses the few experts it is routed to (for example 600 billion total but about 37 billion active per token).",
+    "sourceText": "The model's **total parameters** and **active parameters** differ: a model might have 600 billion parameters in total but use about 37 billion per token."
+  },
+  {
+    "question": "What did the Chinchilla paper find about compute-optimal training?",
+    "expectedAnswer": "Models had been too large and trained on too little data. Chinchilla (70B parameters, 1.4 trillion tokens) beat the 280B Gopher, and its rule of thumb is about 20 training tokens per parameter.",
+    "sourceText": "Chinchilla, at 70 billion parameters trained on 1.4 trillion tokens, beat the 280-billion-parameter Gopher. Its rule of thumb is about **20 training tokens per parameter** for compute-optimal training."
+  },
+  {
+    "question": "Why couldn't early recurrent networks learn relationships between words that were far apart?",
+    "expectedAnswer": "Because of vanishing (or exploding) gradients: backpropagating through every time step multiplies the gradient by the same weight matrix repeatedly, so over many steps it shrinks towards zero or blows up.",
+    "sourceText": "The gradient is multiplied by the same weight matrix at each step, so over 50 or 100 steps it shrinks towards zero (vanishing) or blows up (exploding). The network could not learn dependencies between words far apart."
+  },
+  {
+    "question": "What problem did Bahdanau attention solve in sequence-to-sequence translation?",
+    "expectedAnswer": "The fixed-size bottleneck: instead of compressing the whole source sentence into the encoder's last hidden state, the decoder could look at all encoder states at every step and take a weighted average based on relevance, which improved translation of long sentences.",
+    "sourceText": "Instead of using only the encoder's last hidden state, the decoder could look back at **all** encoder states at every step and compute a weighted average, with the weights learned from how relevant each source word was to the word being produced."
+  },
+  {
+    "question": "How was BERT pretrained, and how did that differ from GPT?",
+    "expectedAnswer": "BERT used the Transformer encoder and masked language modelling: 15% of tokens were hidden and predicted from both sides. GPT used the decoder and was trained to predict the next token.",
+    "sourceText": "**BERT** (Google, October 2018) used the **encoder** half and was pretrained with **masked language modelling**: hide 15% of the tokens and predict them from both sides."
+  },
+  {
+    "question": "Why did InstructGPT matter compared with GPT-3?",
+    "expectedAnswer": "It applied RLHF, and labellers preferred answers from the 1.3-billion-parameter InstructGPT over the 175-billion-parameter GPT-3, showing that instruction following mattered more than raw size for usefulness.",
+    "sourceText": "Labellers preferred answers from the 1.3-billion-parameter InstructGPT over the 175-billion-parameter GPT-3. Following instructions turned out to matter more than raw size for usefulness."
+  },
+  {
+    "question": "How does reciprocal rank fusion combine vector and keyword results?",
+    "expectedAnswer": "Each chunk's fused score is the sum over the result lists of 1 / (k + rank), with k typically 60. It uses only ranks, so the two methods' scores don't need to be calibrated.",
+    "sourceText": "each chunk's fused score is the sum over lists of `1 / (k + rank)`, with k typically 60. RRF uses only ranks, so it needs no score calibration, and a chunk that ranks well in both lists rises to the top."
+  },
+  {
+    "question": "Why is a cross-encoder reranker more accurate than first-stage retrieval, and why isn't it used on the whole library?",
+    "expectedAnswer": "A cross-encoder reads the question and the chunk together in one Transformer pass, so it scores relevance more accurately than a bi-encoder that embeds them separately. It is too slow to run over everything, so it is applied only to the top 20 to 100 candidates.",
+    "sourceText": "A **reranker** is a **cross-encoder**: it reads the question and one chunk together in a single Transformer pass and outputs a relevance score. This is much more accurate but too slow to run over the whole library, so it is applied only to the top 20 to 100 candidates from the first stage."
+  },
+  {
+    "question": "What is HyDE?",
+    "expectedAnswer": "Hypothetical document embeddings: the LLM writes a fake answer to the question, and that answer is embedded and searched instead of the question, because it looks more like the real passage.",
+    "sourceText": "**HyDE (hypothetical document embeddings, 2022):** ask the LLM to write a fake answer, then embed that answer instead of the question, because a fake answer looks more like the real passage than the question does."
+  },
+  {
+    "question": "How is mean reciprocal rank calculated?",
+    "expectedAnswer": "For each question take 1 divided by the rank of the first correct chunk (1 if first, 0.5 if second, 0 if absent) and average over all questions. It rewards putting the answer at the top.",
+    "sourceText": "**MRR (mean reciprocal rank):** for each question take 1 divided by the rank of the first correct chunk (1 if first, 0.5 if second, 0.33 if third, 0 if absent), then average."
+  },
+  {
+    "question": "What is contextual retrieval and what does it cost?",
+    "expectedAnswer": "Before embedding, a short LLM-written summary of where the chunk sits in the document is prepended to it. Anthropic reported large drops in retrieval failures, at the cost of one LLM call per chunk at ingestion.",
+    "sourceText": "**Contextual retrieval:** before embedding, prepend a short LLM-written summary of where the chunk sits in the document"
+  },
+  {
+    "question": "In LangGraph, how does a node pause for a human to approve an action?",
+    "expectedAnswer": "The node calls interrupt(), which pauses the graph and saves its state with the checkpointer; when a person approves or edits, the graph resumes from that point with a Command.",
+    "sourceText": "**Human-in-the-loop:** a node can call `interrupt()` to pause the graph, for example before sending an email or running a database write. The state is saved; when a person approves or edits, the graph resumes from exactly that point with a `Command`."
+  },
+  {
+    "question": "What changed in LangChain 1.0?",
+    "expectedAnswer": "Released in October 2025: a single create_agent constructor, middleware hooks around model and tool calls, agents running on the LangGraph runtime, and legacy chains such as LLMChain and RetrievalQA moved to langchain-classic.",
+    "sourceText": "**LangChain 1.0** was released in **October 2025**, alongside LangGraph 1.0."
+  },
+  {
+    "question": "What does the add_messages reducer do?",
+    "expectedAnswer": "It makes new messages returned by a node get appended to the state's message list instead of overwriting it, which is the default behaviour for a key.",
+    "sourceText": "By default an update overwrites a key; with the `add_messages` reducer, new messages are appended to the list instead."
+  },
+  {
+    "question": "How does DSPy approach prompts differently from other frameworks?",
+    "expectedAnswer": "It treats prompts as something to optimize rather than hand-write: you declare signatures and compose modules, and an optimizer uses a small training set and a metric to search for better instructions and few-shot examples.",
+    "sourceText": "You declare **signatures** (inputs and outputs, such as `question -> answer`) and compose **modules** (such as `ChainOfThought`), then an **optimizer** (formerly called a teleprompter) uses a small training set and a metric to search for better instructions and few-shot examples automatically."
+  },
+  {
+    "question": "How does continuous batching improve LLM serving?",
+    "expectedAnswer": "Many users' requests share each GPU step, and new requests join as others finish instead of waiting for a whole batch to complete.",
+    "sourceText": "**Continuous batching:** many users' requests share each GPU step; new requests join as others finish, instead of waiting for a whole batch to complete."
+  },
+  {
+    "question": "Roughly how much memory does a 70-billion-parameter model need at 16-bit versus 4-bit?",
+    "expectedAnswer": "About 140 GB at 16-bit and about 35 to 40 GB at 4-bit, with a modest quality loss.",
+    "sourceText": "A 70-billion-parameter model needs about 140 GB at 16-bit but about 35–40 GB at 4-bit, with a modest quality loss."
+  },
+  {
+    "question": "What is context engineering and why did the term catch on?",
+    "expectedAnswer": "Deciding exactly what goes into the model's context window for each call (system prompt, retrieved passages, memory, tool definitions, data). It caught on in 2025 when people noticed most agent failures were context failures rather than model failures.",
+    "sourceText": "The term became popular in 2025 as people noticed that most agent failures were context failures (missing information, too much noise, stale or conflicting instructions) rather than model failures."
+  },
+  {
+    "question": "Which merge method does RAG X-Ray use for hybrid search, and why?",
+    "expectedAnswer": "Reciprocal Rank Fusion with k = 60, because it is simple and explainable and needs no score normalisation.",
+    "sourceText": "| Hybrid merge | Reciprocal Rank Fusion (RRF), k = 60 | Simple, explainable, no score normalisation needed |"
+  },
+  {
+    "question": "What does RAG X-Ray use instead of BM25 for keyword search?",
+    "expectedAnswer": "Postgres full-text search (tsvector and ts_rank) as a BM25 stand-in, so hybrid search runs in one database with no extra service.",
+    "sourceText": "| Keyword search | Postgres full-text search (`tsvector`, `ts_rank`) as a BM25 stand-in | No extra service; hybrid search in one database |"
+  },
+  {
+    "question": "How does the app handle Neon's compute going to sleep?",
+    "expectedAnswer": "Neon sleeps after 5 minutes idle, so the first query afterwards is slower; the streaming debugger labels this a cold start.",
+    "sourceText": "| Neon compute sleeps after 5 minutes idle | The first query after idle is slower; the debugger labels this \"cold start\" so you learn what it is |"
+  },
+  {
+    "question": "What does hnsw.ef_search control in pgvector, and what is its default?",
+    "expectedAnswer": "It sets the size of the candidate list at query time: higher values improve recall at the cost of speed. The default is 40.",
+    "sourceText": "At query time, hnsw.ef_search controls the size of the candidate list: higher values improve recall at the cost of speed. The default ef_search is 40."
+  }
+]

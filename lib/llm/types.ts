@@ -12,6 +12,8 @@ export type ChatParams = {
   messages: ChatMessage[];
   temperature?: number;
   maxOutputTokens?: number;
+  /** Ask for a single JSON value instead of prose (the eval judge uses it). */
+  json?: boolean;
   signal?: AbortSignal;
   onRetry?: (info: RetryInfo) => void;
 };
