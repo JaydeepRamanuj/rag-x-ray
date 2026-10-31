@@ -1,8 +1,5 @@
-import { ComingSoon } from "@/components/coming-soon";
-import { findNavItem } from "@/lib/nav";
+import { Chat } from "@/components/chat/chat";
 
-const item = findNavItem("/chat");
-
-export default function Page() {
-  return <ComingSoon {...item} />;
+export default function ChatPage() {
+  return <Chat />;
 }
