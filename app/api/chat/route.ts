@@ -3,9 +3,12 @@ import { z } from "zod";
 
 import type { ChatEventMap, ChatEventName } from "@/lib/chat/events";
 import { allChatModels, defaults, estimateCostUsd, getChatModel } from "@/lib/config";
-import { insertRun, type NewRun } from "@/lib/db/runs";
-import { getProvider, type Usage } from "@/lib/llm";
+import { insertRun, type NewRun, type NewRunChunk } from "@/lib/db/runs";
+import { embedTexts } from "@/lib/embeddings";
+import { getProvider, type ChatMessage, type Usage } from "@/lib/llm";
 import { HttpError } from "@/lib/llm/retry";
+import { buildRagMessages } from "@/lib/prompt/builder";
+import { vectorSearch } from "@/lib/retrieval/vector";
 import { encodeSse, sseHeaders } from "@/lib/sse/encoder";
 
 // Generous enough for a slow answer from a busy model plus retries.
@@ -28,6 +31,13 @@ const bodySchema = z.object({
   /** Forward raw upstream frames for the streaming debugger. */
   debug: z.boolean().default(false),
   source: z.enum(["chat", "debugger"]).default("chat"),
+  /**
+   * "raw" sends `messages` to the model exactly as given (the debugger
+   * replays a saved prompt this way). "rag" treats the last user message as
+   * the question, retrieves sources for it and builds the prompt here.
+   */
+  mode: z.enum(["raw", "rag"]).default("raw"),
+  topK: z.number().int().min(1).max(20).default(defaults.topK),
 });
 
 export async function POST(request: Request) {
@@ -51,8 +61,10 @@ export async function POST(request: Request) {
   const upstream = new AbortController();
   request.signal.addEventListener("abort", () => upstream.abort("client disconnected"));
 
-  let resolveRun: (run: NewRun) => void;
-  const runRecord = new Promise<NewRun>((resolve) => (resolveRun = resolve));
+  let resolveRun: (run: { run: NewRun; chunks: NewRunChunk[] }) => void;
+  const runRecord = new Promise<{ run: NewRun; chunks: NewRunChunk[] }>(
+    (resolve) => (resolveRun = resolve),
+  );
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -73,13 +85,53 @@ export async function POST(request: Request) {
       let lastTokenMs: number | null = null;
       let status: "ok" | "stopped" | "error" = "ok";
       let errorMessage: string | null = null;
+      let finalPrompt: ChatMessage[] = body.messages;
+      let embedTokens: number | null = null;
+      let runChunks: NewRunChunk[] = [];
 
       send("start", { runId, model: model.id, provider: model.provider });
 
       try {
+        if (body.mode === "rag") {
+          // 1. Embed the question. Queries use their own task type, and are
+          //    cached too, so asking the same thing twice skips this call.
+          const embedStart = since();
+          const embedded = await embedTexts([question], "RETRIEVAL_QUERY");
+          const embedMs = since() - embedStart;
+
+          // 2. Nearest chunks by cosine distance.
+          const searchStart = since();
+          const sources = await vectorSearch(embedded.vectors[0], body.topK);
+          const searchMs = since() - searchStart;
+
+          // 3. Rules + earlier turns + numbered sources with the question.
+          const history = body.messages.slice(
+            0,
+            body.messages.findLastIndex((m) => m.role === "user"),
+          );
+          finalPrompt = buildRagMessages({ history, question, sources });
+          embedTokens = embedded.embeddedTokens;
+          runChunks = sources.map((s, i) => ({
+            runId,
+            chunkId: s.chunkId,
+            method: "vector",
+            rank: i + 1,
+            score: s.score,
+            usedInPrompt: true,
+          }));
+          send("retrieval", {
+            atMs: since(),
+            embedMs,
+            searchMs,
+            queryCached: embedded.cacheHits === 1,
+            embedTokens: embedded.embeddedTokens,
+            sources: sources.map((s, i) => ({ n: i + 1, ...s })),
+          });
+        }
+
         const result = await provider.chatStream({
           model,
-          messages: body.messages,
+          messages: finalPrompt,
           temperature: body.temperature,
           maxOutputTokens: body.maxOutputTokens,
           signal: upstream.signal,
@@ -133,27 +185,33 @@ export async function POST(request: Request) {
       }
 
       resolveRun({
-        id: runId,
-        question,
-        config: {
-          provider: model.provider,
-          model: model.id,
-          temperature: body.temperature,
-          maxOutputTokens: body.maxOutputTokens,
-          reasoning: model.reasoning,
-          source: body.source,
-          finishReason,
+        chunks: runChunks,
+        run: {
+          id: runId,
+          question,
+          config: {
+            provider: model.provider,
+            model: model.id,
+            mode: body.mode,
+            topK: body.mode === "rag" ? body.topK : null,
+            temperature: body.temperature,
+            maxOutputTokens: body.maxOutputTokens,
+            reasoning: model.reasoning,
+            source: body.source,
+            finishReason,
+          },
+          finalPrompt,
+          answer,
+          status,
+          error: errorMessage,
+          inputTokens: usage?.inputTokens,
+          outputTokens: usage?.outputTokens,
+          cachedTokens: usage?.cachedTokens,
+          ttftMs,
+          totalMs,
+          estCostUsd: estCostUsd?.toString(),
+          embedTokens,
         },
-        finalPrompt: body.messages,
-        answer,
-        status,
-        error: errorMessage,
-        inputTokens: usage?.inputTokens,
-        outputTokens: usage?.outputTokens,
-        cachedTokens: usage?.cachedTokens,
-        ttftMs,
-        totalMs,
-        estCostUsd: estCostUsd?.toString(),
       });
 
       if (open) controller.close();
@@ -167,7 +225,8 @@ export async function POST(request: Request) {
   // critical path, and still runs if the client disconnected mid-stream.
   after(async () => {
     try {
-      await insertRun(await runRecord);
+      const { run, chunks } = await runRecord;
+      await insertRun(run, chunks);
     } catch (err) {
       console.error(`Failed to save run ${runId}:`, err instanceof Error ? err.message : err);
     }

@@ -1,13 +1,20 @@
 import { eq } from "drizzle-orm";
 
 import { getDb } from "./client";
-import { runs } from "./schema";
+import { runChunks, runs } from "./schema";
 
 export type NewRun = typeof runs.$inferInsert;
+export type NewRunChunk = typeof runChunks.$inferInsert;
 export type Run = typeof runs.$inferSelect;
 
-export async function insertRun(run: NewRun): Promise<void> {
-  await getDb().insert(runs).values(run);
+/** The run and the chunks it retrieved, in one transaction. */
+export async function insertRun(run: NewRun, chunks: NewRunChunk[] = []): Promise<void> {
+  const db = getDb();
+  if (chunks.length === 0) {
+    await db.insert(runs).values(run);
+    return;
+  }
+  await db.batch([db.insert(runs).values(run), db.insert(runChunks).values(chunks)]);
 }
 
 export async function getRun(id: string): Promise<Run | undefined> {

@@ -9,6 +9,8 @@ export type ChatRequest = {
   temperature?: number;
   debug?: boolean;
   source?: "chat" | "debugger";
+  mode?: "raw" | "rag";
+  topK?: number;
 };
 
 export type StreamOptions = {

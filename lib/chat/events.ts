@@ -1,14 +1,26 @@
 import type { Usage } from "@/lib/llm/types";
+import type { RetrievedChunk } from "@/lib/retrieval/vector";
+
+export type Source = RetrievedChunk & { n: number };
 
 /**
  * The events /api/chat sends, in order:
- *   start → (retry)* → meta → (upstream | token)* → usage? → done | error
+ *   start → retrieval? → (retry)* → meta → (upstream | token)* → usage? → done | error
  *
  * Timings are milliseconds since the server received the request, so the
  * client can line them up against its own clock for the debugger timeline.
  */
 export type ChatEventMap = {
   start: { runId: string; model: string; provider: string };
+  /** RAG mode only: what was retrieved and how long each step took. */
+  retrieval: {
+    atMs: number;
+    embedMs: number;
+    searchMs: number;
+    queryCached: boolean;
+    embedTokens: number;
+    sources: Source[];
+  };
   retry: { attempt: number; status: number; delayMs: number; atMs: number };
   /** Upstream responded with headers: the request was accepted. */
   meta: { atMs: number; attempts: number; headers: Record<string, string> };
