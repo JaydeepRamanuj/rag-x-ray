@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { ArrowUp, Square } from "lucide-react";
+import { ArrowUp, ScanSearch, Square } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -329,9 +329,19 @@ function StatsLine({ stats, elapsedMs }: { stats: Stats; elapsedMs: number }) {
       {stats.status === "stopped" && <span className="text-amber-600">stopped</span>}
       {stats.status === "error" && <span className="text-destructive">{stats.error}</span>}
       {stats.runId && !live && stats.status !== "error" && (
-        <Link href={`/runs/${stats.runId}/stream`} className="underline underline-offset-2">
-          Inspect stream
-        </Link>
+        <>
+          <Button
+            variant="outline"
+            size="xs"
+            nativeButton={false}
+            render={<Link href={`/runs/${stats.runId}/prompt`} />}
+          >
+            <ScanSearch /> Inspect
+          </Button>
+          <Link href={`/runs/${stats.runId}/stream`} className="underline underline-offset-2">
+            Stream
+          </Link>
+        </>
       )}
     </div>
   );

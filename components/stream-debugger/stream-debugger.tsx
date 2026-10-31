@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRef, useState } from "react";
 import { Play, Square } from "lucide-react";
 
@@ -216,6 +217,12 @@ export function StreamDebugger({ run }: { run: SavedRun }) {
             <span>in {formatInt(run.inputTokens)}</span>
             <span>out {formatInt(run.outputTokens)}</span>
             <span>cost if paid {formatUsd(run.estCostUsd)}</span>
+            <Link
+              href={`/runs/${run.id}/prompt`}
+              className="font-sans underline underline-offset-2"
+            >
+              Prompt inspector
+            </Link>
           </div>
           {run.error && <div className="text-destructive text-xs">{run.error}</div>}
         </div>
