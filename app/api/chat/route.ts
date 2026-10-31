@@ -30,7 +30,7 @@ const bodySchema = z.object({
   maxOutputTokens: z.number().int().min(16).max(8_192).default(defaults.maxOutputTokens),
   /** Forward raw upstream frames for the streaming debugger. */
   debug: z.boolean().default(false),
-  source: z.enum(["chat", "debugger"]).default("chat"),
+  source: z.enum(["chat", "debugger", "inspector"]).default("chat"),
   /**
    * "raw" sends `messages` to the model exactly as given (the debugger
    * replays a saved prompt this way). "rag" treats the last user message as
@@ -38,6 +38,25 @@ const bodySchema = z.object({
    */
   mode: z.enum(["raw", "rag"]).default("raw"),
   topK: z.number().int().min(1).max(20).default(defaults.topK),
+  /** A re-run from the prompt inspector: which run it was edited from. */
+  parentRunId: z.uuid().optional(),
+  /**
+   * Raw mode only. The human question, when the last user message is a
+   * built prompt with sources in it, so the ledger shows something readable.
+   */
+  question: z.string().min(1).max(2_000).optional(),
+  /** Raw mode only: the chunks inside the prompt, kept or removed, to record. */
+  chunks: z
+    .array(
+      z.object({
+        chunkId: z.uuid(),
+        rank: z.number().int().min(1),
+        score: z.number(),
+        usedInPrompt: z.boolean(),
+      }),
+    )
+    .max(20)
+    .optional(),
 });
 
 export async function POST(request: Request) {
@@ -54,7 +73,7 @@ export async function POST(request: Request) {
   // The id is made here, not by the database, so the client gets it in the
   // first event instead of waiting for an insert (Neon may be cold).
   const runId = crypto.randomUUID();
-  const question = body.messages.findLast((m) => m.role === "user")?.content ?? "";
+  const question = body.question ?? body.messages.findLast((m) => m.role === "user")?.content ?? "";
 
   // Aborting this cancels the upstream fetch, so a stopped stream stops
   // generating (and costing) tokens at the provider too.
@@ -87,7 +106,10 @@ export async function POST(request: Request) {
       let errorMessage: string | null = null;
       let finalPrompt: ChatMessage[] = body.messages;
       let embedTokens: number | null = null;
-      let runChunks: NewRunChunk[] = [];
+      let runChunks: NewRunChunk[] =
+        body.mode === "raw"
+          ? (body.chunks ?? []).map((c) => ({ runId, method: "vector", ...c }))
+          : [];
 
       send("start", { runId, model: model.id, provider: model.provider });
 
@@ -199,6 +221,7 @@ export async function POST(request: Request) {
             reasoning: model.reasoning,
             source: body.source,
             finishReason,
+            ...(body.parentRunId && { parentRunId: body.parentRunId }),
           },
           finalPrompt,
           answer,
@@ -207,6 +230,7 @@ export async function POST(request: Request) {
           inputTokens: usage?.inputTokens,
           outputTokens: usage?.outputTokens,
           cachedTokens: usage?.cachedTokens,
+          reasoningTokens: usage?.reasoningTokens,
           ttftMs,
           totalMs,
           estCostUsd: estCostUsd?.toString(),

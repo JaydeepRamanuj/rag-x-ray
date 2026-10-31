@@ -8,9 +8,12 @@ export type ChatRequest = {
   messages: ChatMessage[];
   temperature?: number;
   debug?: boolean;
-  source?: "chat" | "debugger";
+  source?: "chat" | "debugger" | "inspector";
   mode?: "raw" | "rag";
   topK?: number;
+  parentRunId?: string;
+  question?: string;
+  chunks?: { chunkId: string; rank: number; score: number; usedInPrompt: boolean }[];
 };
 
 export type StreamOptions = {

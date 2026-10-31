@@ -8,7 +8,8 @@ import {
   insertDocumentWithChunks,
   totalTokens,
 } from "@/lib/db/documents";
-import { embedTexts } from "@/lib/embeddings";
+import { insertIngestUsage } from "@/lib/db/ledger";
+import { embedTexts, type EmbedResult } from "@/lib/embeddings";
 import { extract, sourceTypeFor } from "@/lib/ingest/extract";
 import type { IngestEventMap, IngestEventName } from "@/lib/ingest/events";
 import { encodeSse, sseHeaders } from "@/lib/sse/encoder";
@@ -59,6 +60,12 @@ export async function POST(request: Request) {
         }
       };
 
+      // Set once embedding finishes, so usage is logged even if storing fails:
+      // the quota was spent either way.
+      let embedded: EmbedResult | null = null;
+      let documentId: string | null = null;
+      let failed = false;
+
       try {
         const { sourceType, text, pages } = await extract(file.name, bytes);
         if (!text) throw new Error("No text found. Scanned PDFs need OCR, which isn't supported.");
@@ -90,11 +97,12 @@ export async function POST(request: Request) {
           maxTokens: Math.max(...sizes),
         });
 
-        const embedded = await embedTexts(
+        const result = await embedTexts(
           chunks.map((c) => c.content),
           "RETRIEVAL_DOCUMENT",
           (p) => send("embedding", { atMs: since(), ...p, total: chunks.length }),
         );
+        embedded = result;
 
         // Replace only after the new copy is fully embedded, so a failed
         // re-upload never leaves you with neither version.
@@ -103,7 +111,7 @@ export async function POST(request: Request) {
           await deleteDocument(existing.id);
         }
 
-        const { documentId } = await insertDocumentWithChunks({
+        ({ documentId } = await insertDocumentWithChunks({
           title: file.name,
           sourceType,
           rawText: text,
@@ -113,20 +121,34 @@ export async function POST(request: Request) {
           strategy: "recursive",
           chunkSize: defaults.chunkSize,
           overlap: defaults.chunkOverlap,
-          chunks: chunks.map((c, i) => ({ ordinal: i, ...c, embedding: embedded.vectors[i] })),
-        });
+          chunks: chunks.map((c, i) => ({ ordinal: i, ...c, embedding: result.vectors[i] })),
+        }));
         send("stored", { atMs: since(), documentId });
         send("done", {
           atMs: since(),
           documentId,
           title: file.name,
           chunks: chunks.length,
-          cacheHits: embedded.cacheHits,
-          embeddedTokens: embedded.embeddedTokens,
-          batches: embedded.batches,
+          cacheHits: result.cacheHits,
+          embeddedTokens: result.embeddedTokens,
+          batches: result.batches,
         });
       } catch (err) {
+        failed = true;
         send("error", { atMs: since(), message: err instanceof Error ? err.message : String(err) });
+      }
+
+      if (embedded) {
+        await insertIngestUsage({
+          documentId,
+          title: file.name,
+          status: failed ? "error" : "ok",
+          chunks: embedded.vectors.length,
+          cacheHits: embedded.cacheHits,
+          embedTokens: embedded.embeddedTokens,
+          requests: embedded.batches,
+          totalMs: since(),
+        }).catch((err) => console.error("Failed to log ingest usage:", err));
       }
       controller.close();
     },
