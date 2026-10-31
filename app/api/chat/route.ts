@@ -4,11 +4,11 @@ import { z } from "zod";
 import type { ChatEventMap, ChatEventName } from "@/lib/chat/events";
 import { allChatModels, defaults, estimateCostUsd, getChatModel } from "@/lib/config";
 import { insertRun, type NewRun, type NewRunChunk } from "@/lib/db/runs";
-import { embedTexts } from "@/lib/embeddings";
 import { getProvider, type ChatMessage, type Usage } from "@/lib/llm";
 import { HttpError } from "@/lib/llm/retry";
 import { buildRagMessages } from "@/lib/prompt/builder";
-import { vectorSearch } from "@/lib/retrieval/vector";
+import { checkPassword } from "@/lib/auth";
+import { METHODS, retrieveForChat } from "@/lib/retrieval";
 import { encodeSse, sseHeaders } from "@/lib/sse/encoder";
 
 // Generous enough for a slow answer from a busy model plus retries.
@@ -38,6 +38,10 @@ const bodySchema = z.object({
    */
   mode: z.enum(["raw", "rag"]).default("raw"),
   topK: z.number().int().min(1).max(20).default(defaults.topK),
+  /** RAG mode: how chunks are found. Vector was the only option before Phase 4. */
+  retrieval: z.enum(METHODS).default("vector"),
+  /** RAG mode: reorder candidates with Cohere. Off by default to save the trial quota. */
+  rerank: z.boolean().default(false),
   /** A re-run from the prompt inspector: which run it was edited from. */
   parentRunId: z.uuid().optional(),
   /**
@@ -65,6 +69,10 @@ export async function POST(request: Request) {
     return Response.json({ error: z.prettifyError(parsed.error) }, { status: 400 });
   }
   const body = parsed.data;
+  if (body.mode === "rag" && body.rerank) {
+    const auth = checkPassword(request);
+    if (!auth.ok) return auth.response;
+  }
   const model = getChatModel(body.model);
   const provider = getProvider(model.provider);
 
@@ -115,16 +123,13 @@ export async function POST(request: Request) {
 
       try {
         if (body.mode === "rag") {
-          // 1. Embed the question. Queries use their own task type, and are
-          //    cached too, so asking the same thing twice skips this call.
-          const embedStart = since();
-          const embedded = await embedTexts([question], "RETRIEVAL_QUERY");
-          const embedMs = since() - embedStart;
-
-          // 2. Nearest chunks by cosine distance.
-          const searchStart = since();
-          const sources = await vectorSearch(embedded.vectors[0], body.topK);
-          const searchMs = since() - searchStart;
+          // 1–2. Embed the question (cached, and skipped for keyword search),
+          //      find chunks by the chosen method, optionally rerank them.
+          const found = await retrieveForChat(question, body.retrieval, {
+            topK: body.topK,
+            rerank: body.rerank,
+          });
+          const { sources } = found;
 
           // 3. Rules + earlier turns + numbered sources with the question.
           const history = body.messages.slice(
@@ -132,21 +137,23 @@ export async function POST(request: Request) {
             body.messages.findLastIndex((m) => m.role === "user"),
           );
           finalPrompt = buildRagMessages({ history, question, sources });
-          embedTokens = embedded.embeddedTokens;
+          embedTokens = found.query?.tokens ?? 0;
           runChunks = sources.map((s, i) => ({
             runId,
             chunkId: s.chunkId,
-            method: "vector",
+            method: found.method,
             rank: i + 1,
             score: s.score,
             usedInPrompt: true,
           }));
           send("retrieval", {
             atMs: since(),
-            embedMs,
-            searchMs,
-            queryCached: embedded.cacheHits === 1,
-            embedTokens: embedded.embeddedTokens,
+            embedMs: found.query?.ms ?? 0,
+            searchMs: found.searchMs,
+            queryCached: found.query?.cached ?? false,
+            embedTokens: found.query?.tokens ?? 0,
+            method: found.method,
+            rerank: found.rerank,
             sources: sources.map((s, i) => ({ n: i + 1, ...s })),
           });
         }
@@ -216,6 +223,7 @@ export async function POST(request: Request) {
             model: model.id,
             mode: body.mode,
             topK: body.mode === "rag" ? body.topK : null,
+            ...(body.mode === "rag" && { retrieval: body.retrieval, rerank: body.rerank }),
             temperature: body.temperature,
             maxOutputTokens: body.maxOutputTokens,
             reasoning: model.reasoning,

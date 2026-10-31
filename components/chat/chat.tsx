@@ -12,11 +12,13 @@ import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select"
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { isAbortError, streamChat } from "@/lib/chat/client";
+import { loadPassword } from "@/lib/client/password";
 import type { Source } from "@/lib/chat/events";
 import { allChatModels, defaults } from "@/lib/config";
 import { formatInt, formatMs, formatUsd } from "@/lib/format";
 import type { ChatMessage, Usage } from "@/lib/llm/types";
 import { citedNumbers } from "@/lib/prompt/builder";
+import { METHODS, type Method } from "@/lib/retrieval/methods";
 
 const SYSTEM_PROMPT = "You are a helpful assistant. Answer concisely.";
 
@@ -30,7 +32,13 @@ type Stats = {
   estCostUsd: number | null;
   retries: number;
   error?: string;
-  retrieval?: { embedMs: number; searchMs: number; queryCached: boolean };
+  retrieval?: {
+    embedMs: number;
+    searchMs: number;
+    queryCached: boolean;
+    method: string;
+    rerank: { cached: boolean; ms: number } | null;
+  };
 };
 
 type Turn = {
@@ -43,6 +51,11 @@ type Turn = {
 };
 
 const TOP_K_OPTIONS = [3, 5, 8, 10];
+const METHOD_LABELS: Record<Method, string> = {
+  vector: "vector",
+  keyword: "keyword",
+  hybrid: "hybrid (RRF)",
+};
 
 export function Chat() {
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -50,6 +63,8 @@ export function Chat() {
   const [model, setModel] = useState<string>(defaults.chatModel);
   const [useDocs, setUseDocs] = useState(true);
   const [topK, setTopK] = useState<number>(defaults.topK);
+  const [method, setMethod] = useState<Method>("vector");
+  const [useRerank, setUseRerank] = useState(false);
   const [now, setNow] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
   const [startedAt, setStartedAt] = useState(0);
@@ -121,7 +136,16 @@ export function Chat() {
 
     try {
       await streamChat(
-        { model, messages, source: "chat", mode: useDocs ? "rag" : "raw", topK },
+        {
+          model,
+          messages,
+          source: "chat",
+          mode: useDocs ? "rag" : "raw",
+          topK,
+          retrieval: method,
+          rerank: useRerank,
+          password: loadPassword(),
+        },
         {
           signal: controller.signal,
           onEvent: (e, clientMs) => {
@@ -138,6 +162,8 @@ export function Chat() {
                       embedMs: e.data.embedMs,
                       searchMs: e.data.searchMs,
                       queryCached: e.data.queryCached,
+                      method: e.data.method,
+                      rerank: e.data.rerank,
                     },
                   },
                 }));
@@ -270,6 +296,31 @@ export function Chat() {
                   ))}
                 </NativeSelect>
               )}
+              {useDocs && (
+                <NativeSelect
+                  value={method}
+                  onChange={(e) => setMethod(e.target.value as Method)}
+                  aria-label="Retrieval method"
+                  disabled={streaming}
+                >
+                  {METHODS.map((m) => (
+                    <NativeSelectOption key={m} value={m}>
+                      {METHOD_LABELS[m]}
+                    </NativeSelectOption>
+                  ))}
+                </NativeSelect>
+              )}
+              {useDocs && (
+                <div className="flex items-center gap-2">
+                  <Switch
+                    id="use-rerank"
+                    checked={useRerank}
+                    onCheckedChange={setUseRerank}
+                    disabled={streaming}
+                  />
+                  <Label htmlFor="use-rerank">Rerank</Label>
+                </div>
+              )}
             </div>
             {streaming ? (
               <Button variant="outline" onClick={() => abortRef.current?.abort()}>
@@ -313,8 +364,17 @@ function StatsLine({ stats, elapsedMs }: { stats: Stats; elapsedMs: number }) {
         "embed",
         `${formatMs(stats.retrieval.embedMs)}${stats.retrieval.queryCached ? " (cached)" : ""}`,
       ],
-      ["search", formatMs(stats.retrieval.searchMs)],
+      [
+        stats.retrieval.method === "rerank" ? "search" : stats.retrieval.method,
+        formatMs(stats.retrieval.searchMs),
+      ],
     );
+    if (stats.retrieval.rerank) {
+      items.splice(2, 0, [
+        "rerank",
+        stats.retrieval.rerank.cached ? "cached" : formatMs(stats.retrieval.rerank.ms),
+      ]);
+    }
   }
 
   return (

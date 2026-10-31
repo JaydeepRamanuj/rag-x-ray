@@ -14,8 +14,9 @@ import {
 
 export type { RetrievedChunk } from "./vector";
 
-export const METHODS = ["vector", "keyword", "hybrid"] as const;
-export type Method = (typeof METHODS)[number];
+import type { Method } from "./methods";
+
+export { METHODS, type Method } from "./methods";
 
 export type RetrieveOptions = SearchOptions & {
   topK: number;

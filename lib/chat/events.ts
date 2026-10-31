@@ -19,6 +19,9 @@ export type ChatEventMap = {
     searchMs: number;
     queryCached: boolean;
     embedTokens: number;
+    /** How the sources were ranked: the chosen method, or "rerank" on top of it. */
+    method: string;
+    rerank: { cached: boolean; billedTokens: number; ms: number } | null;
     sources: Source[];
   };
   retry: { attempt: number; status: number; delayMs: number; atMs: number };

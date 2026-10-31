@@ -11,6 +11,10 @@ export type ChatRequest = {
   source?: "chat" | "debugger" | "inspector";
   mode?: "raw" | "rag";
   topK?: number;
+  retrieval?: "vector" | "keyword" | "hybrid";
+  rerank?: boolean;
+  /** Reranking spends the Cohere trial quota, so the route wants the app password. */
+  password?: string;
   parentRunId?: string;
   question?: string;
   chunks?: { chunkId: string; rank: number; score: number; usedInPrompt: boolean }[];
@@ -37,10 +41,11 @@ export async function streamChat(request: ChatRequest, options: StreamOptions): 
   const t0 = performance.now();
   const since = () => Math.round(performance.now() - t0);
 
+  const { password, ...body } = request;
   const response = await fetch("/api/chat", {
     method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(request),
+    headers: { "content-type": "application/json", "x-app-password": password ?? "" },
+    body: JSON.stringify(body),
     signal: options.signal,
   });
   if (!response.ok || !response.body) {
