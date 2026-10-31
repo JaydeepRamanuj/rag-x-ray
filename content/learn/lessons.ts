@@ -16,7 +16,7 @@ export const lessons: Lesson[] = [
     title: "How an LLM API call works",
     summary: "Messages, roles, parameters, the response body.",
     phase: 1,
-    written: false,
+    written: true,
   },
   {
     slug: "tokens",
@@ -24,7 +24,7 @@ export const lessons: Lesson[] = [
     title: "Tokens and tokenisers",
     summary: "Why counts differ, input vs output pricing, context windows.",
     phase: 1,
-    written: false,
+    written: true,
   },
   {
     slug: "streaming",
@@ -32,7 +32,7 @@ export const lessons: Lesson[] = [
     title: "Streaming",
     summary: "SSE format, ReadableStream, parsing partial events, cancellation.",
     phase: 1,
-    written: false,
+    written: true,
   },
   {
     slug: "embeddings",

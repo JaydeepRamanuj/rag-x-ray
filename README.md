@@ -2,7 +2,7 @@
 
 A chat-over-your-documents app where every pipeline stage (chunking, embeddings, retrieval, prompt, streaming, tokens, evals) is visible, adjustable and measured. See [the build plan](docs/RAG%20X-Ray%20—%20Build%20Plan.md) for the full spec.
 
-**Status:** Phase 0 (foundation): app shell, database schema, config and health check.
+**Status:** Phase 1: chat with Gemini or Groq over hand-written SSE, Stop, live TTFT and token counts, and a streaming debugger. Every call is saved to `runs`.
 
 ## Setup
 

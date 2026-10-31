@@ -23,3 +23,31 @@ The decisions made while building RAG X-Ray, what broke, and why. One entry per 
 ### What to notice
 
 Open [`/api/health`](/api/health) twice, a few seconds apart, after the app has been idle for more than five minutes. The first `database.ms` is much higher than the second because Neon's compute was asleep. That's the cold start.
+
+## Phase 1: Raw LLM call and streaming (31 Oct 2026)
+
+**What was built:** a provider adapter for Gemini and Groq written with plain `fetch`, a hand-written SSE parser and encoder, `/api/chat` streaming its own SSE events, the [Chat](/chat) page with Stop and live stats, and the streaming debugger at `/runs/[id]/stream`. Every call is saved to `runs`.
+
+### Decisions
+
+- **Probe before coding.** The docs left gaps: where streamed usage arrives, what the thinking setting is called, how a 429 looks. One tiny live call to each provider answered them. Gemini repeats a running `usageMetadata` total on every chunk; Groq sends `usage` once, just before `[DONE]`, and only if you ask with `stream_options.include_usage`.
+- **Thinking is set per model, at its floor.** All four chat models are reasoning models. Gemini 3.5 Flash-Lite accepts `thinkingLevel: "minimal"`, Gemini 3.8 Flash rejects it with a 400 and needs `"low"`, and GPT-OSS takes `reasoning_effort: "low"`. Each model's value lives in `lib/config.ts`.
+- **`outputTokens` means "billed output".** Gemini counts thinking separately from the answer; Groq folds it in. The adapter normalises to answer + thinking, with thinking also reported on its own.
+- **The run id is created in the route, not the database**, so the browser gets it in the first event without waiting on a possibly cold Neon. The run is written with `after()`, which runs once the response finishes, including when the client disconnects.
+- **`runs` gained `status` and `error` columns.** A stopped run keeps its partial answer and whatever usage arrived, so you can see what tokens you paid for. Migration `0002_runs_status`.
+- **Retries stop before streaming starts.** Once tokens reach the user, replaying the request would duplicate them. A `retry-after` longer than 30 s fails fast, because it usually means a daily quota is gone.
+- **One SSE parser for both directions.** The server reads Gemini and Groq with the same `readSse()` that the browser uses to read us.
+
+### What broke
+
+- **Gemini 3.8 Flash returned 503 "high demand"** during the first probe. That's why 5xx is retried as well as 429.
+- **Next 16 rejected `dynamicParams` again**, this time indirectly: the stream page reads the database, so it renders inside `<Suspense>` to keep the rest of the page prerenderable.
+- **The React Compiler lint rule flagged reading a ref during render** (the stream start time). It became state.
+- **A wide table stretched the whole page.** The main column is a flex child, and flex children won't shrink below their content's width unless told to with `min-w-0`. The fix is one class on the layout; lesson tables also scroll on their own now.
+- **`next/link` inside `mdx-components.tsx` broke lessons in dev.** Lessons load through a dynamic import, and Next's dev-time navigation check couldn't resolve the Link module along that path. Plain `<a>` tags do the job for lesson links.
+- **The debugger first showed upstream frames double-escaped** (JSON inside our JSON envelope). It now shows each frame exactly as the provider sent it.
+
+### What to notice
+
+- In the debugger with **slow network** on, the server's work ends at about 1.6 s but the browser is still reading at 11 s. One read can deliver twenty events at once once the client falls behind. That's back-pressure.
+- GPT-OSS bills about 80 input tokens for a five-word question; Gemini bills about 7. The difference is GPT-OSS's chat template, covered in Lesson 2.
