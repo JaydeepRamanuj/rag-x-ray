@@ -36,6 +36,13 @@ export type ChatModel = {
   provider: ProviderId;
   label: string;
   contextWindow?: number;
+  /**
+   * The lowest thinking setting the model accepts. All of these are reasoning
+   * models that "think" before answering; thinking tokens are billed as output
+   * and add latency, so a chat app keeps them as low as the model allows.
+   * Gemini calls it thinkingLevel, Groq calls it reasoning_effort.
+   */
+  reasoning: string;
   price: Price;
   free: FreeLimits;
 };
@@ -57,16 +64,19 @@ export const chatModels = {
     id: "gemini-3.5-flash-lite",
     provider: "gemini",
     label: "Gemini 3.5 Flash-Lite",
+    reasoning: "minimal",
     price: { input: 0.3, cachedInput: 0.03, output: 2.5 },
     // Google no longer publishes fixed free-tier numbers; AI Studio shows them.
     free: {},
   },
   // Stronger model used as the eval judge (Phase 5).
-  // Price drops back to $1.50 / $7.50 on 2027-01-01 per Google's schedule.
+  // Introductory price; rises to $1.50 / $7.50 on 2027-01-01 per Google's schedule.
   geminiFlash: {
     id: "gemini-3.8-flash",
     provider: "gemini",
     label: "Gemini 3.8 Flash",
+    // Rejects "minimal" with a 400; "low" is its floor.
+    reasoning: "low",
     price: { input: 0.75, cachedInput: 0.075, output: 3.75 },
     free: {},
   },
@@ -75,6 +85,8 @@ export const chatModels = {
     id: "openai/gpt-oss-20b",
     provider: "groq",
     label: "GPT-OSS 20B (Groq)",
+    contextWindow: 131_072,
+    reasoning: "low",
     price: { input: 0.075, cachedInput: 0.037, output: 0.3 },
     free: { rpm: 30, rpd: 1_000, tpm: 8_000, tpd: 200_000 },
   },
@@ -82,6 +94,8 @@ export const chatModels = {
     id: "openai/gpt-oss-120b",
     provider: "groq",
     label: "GPT-OSS 120B (Groq)",
+    contextWindow: 131_072,
+    reasoning: "low",
     price: { input: 0.15, cachedInput: 0.075, output: 0.6 },
     free: { rpm: 30, rpd: 1_000, tpm: 8_000, tpd: 200_000 },
   },
@@ -126,6 +140,8 @@ export const defaults = {
   embeddingModel: embeddingModels.gemini.id,
   topK: 5,
   temperature: 0.2,
+  /** Thinking tokens count against this too, so it can't be very small. */
+  maxOutputTokens: 2_048,
   chunkSize: 400, // tokens
   chunkOverlap: 40, // tokens
   /** RRF constant from the original paper; larger k flattens rank differences. */
@@ -141,7 +157,7 @@ export const limits = {
   retry: { maxAttempts: 4, baseDelayMs: 1_000, maxDelayMs: 30_000 },
 } as const;
 
-const allChatModels: ChatModel[] = Object.values(chatModels);
+export const allChatModels: ChatModel[] = Object.values(chatModels);
 
 export function getChatModel(id: string): ChatModel {
   const model = allChatModels.find((m) => m.id === id);
