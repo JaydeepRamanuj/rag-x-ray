@@ -15,13 +15,14 @@ import { Label } from "@/components/ui/label";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { Switch } from "@/components/ui/switch";
 import { allChatModels, embeddingModels, type FreeLimits } from "@/lib/config";
-import type { IngestDay, ModelDay } from "@/lib/db/ledger";
+import type { EvalDay, IngestDay, ModelDay } from "@/lib/db/ledger";
 import { formatInt } from "@/lib/format";
 
 const EMBEDDINGS = "embeddings";
 
 const requestConfig = {
   chat: { label: "Chat requests", color: "#0ea5e9" },
+  evals: { label: "Eval requests", color: "#f43f5e" },
   queries: { label: "Query embeddings", color: "#0ea5e9" },
   uploads: { label: "Upload batches", color: "#8b5cf6" },
 } satisfies ChartConfig;
@@ -30,6 +31,7 @@ const tokenConfig = {
   input: { label: "Input", color: "#f59e0b" },
   cached: { label: "Cached input", color: "#fcd34d" },
   output: { label: "Output", color: "#10b981" },
+  evals: { label: "Eval tokens", color: "#f43f5e" },
   queries: { label: "Query embeddings", color: "#0ea5e9" },
   uploads: { label: "Upload embeddings", color: "#8b5cf6" },
 } satisfies ChartConfig;
@@ -49,12 +51,14 @@ export function UsageChart({
   days,
   models,
   ingest,
+  evals,
 }: {
   days: string[];
   models: ModelDay[];
   ingest: IngestDay[];
+  evals: EvalDay[];
 }) {
-  const used = new Set(models.map((m) => m.model));
+  const used = new Set([...models, ...evals].map((m) => m.model));
   const [target, setTarget] = useState<string>(
     allChatModels.find((m) => used.has(m.id))?.id ?? allChatModels[0].id,
   );
@@ -74,7 +78,12 @@ export function UsageChart({
         uploads: ingest.find((i) => i.day === day)?.requests ?? 0,
       };
     }
-    return { day, chat: rows.find((r) => r.model === target)?.requests ?? 0 };
+    const e = evals.find((x) => x.day === day && x.model === target);
+    return {
+      day,
+      chat: rows.find((r) => r.model === target)?.requests ?? 0,
+      evals: e?.requests ?? 0,
+    };
   });
   const tokens = days.map((day): Point => {
     const rows = models.filter((m) => m.day === day);
@@ -86,17 +95,19 @@ export function UsageChart({
       };
     }
     const r = rows.find((x) => x.model === target);
+    const e = evals.find((x) => x.day === day && x.model === target);
     return {
       day,
       // Cached tokens are part of input; split them out so the stack adds up.
       input: (r?.inputTokens ?? 0) - (r?.cachedTokens ?? 0),
       cached: r?.cachedTokens ?? 0,
       output: r?.outputTokens ?? 0,
+      evals: (e?.inputTokens ?? 0) + (e?.outputTokens ?? 0),
     };
   });
 
-  const requestKeys = isEmbed ? ["queries", "uploads"] : ["chat"];
-  const tokenKeys = isEmbed ? ["queries", "uploads"] : ["input", "cached", "output"];
+  const requestKeys = isEmbed ? ["queries", "uploads"] : ["chat", "evals"];
+  const tokenKeys = isEmbed ? ["queries", "uploads"] : ["input", "cached", "output", "evals"];
   const maxRequests = Math.max(
     0,
     ...requests.map((p) => requestKeys.reduce((s, k) => s + Number(p[k]), 0)),

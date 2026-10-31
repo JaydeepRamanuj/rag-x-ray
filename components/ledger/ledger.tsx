@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRef, useState } from "react";
 
 import { allChatModels, estimateCostUsd } from "@/lib/config";
-import type { IngestDay, ModelDay } from "@/lib/db/ledger";
+import type { EvalDay, IngestDay, ModelDay } from "@/lib/db/ledger";
 import { formatInt, formatMs, formatUsd } from "@/lib/format";
 import { embedCostUsd } from "@/lib/tokens/cost";
 import { cn } from "@/lib/utils";
@@ -15,7 +15,7 @@ import { WhatIf, type LedgerRow } from "./what-if";
 type Props = {
   rows: LedgerRow[];
   days: string[];
-  usage: { models: ModelDay[]; ingest: IngestDay[] };
+  usage: { models: ModelDay[]; ingest: IngestDay[]; evals: EvalDay[] };
   initialRunId?: string;
   maxRuns: number;
 };
@@ -81,7 +81,7 @@ export function Ledger({ rows, days, usage, initialRunId, maxRuns }: Props) {
         ))}
       </div>
 
-      <UsageChart days={days} models={usage.models} ingest={usage.ingest} />
+      <UsageChart days={days} models={usage.models} ingest={usage.ingest} evals={usage.evals} />
 
       <section ref={whatIfRef} className="flex scroll-mt-4 flex-col gap-3">
         <h2 className="font-semibold">What if?</h2>

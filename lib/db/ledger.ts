@@ -35,6 +35,15 @@ export type ModelDay = {
 
 export type IngestDay = { day: string; uploads: number; requests: number; embedTokens: number };
 
+/** Answer and judge calls made by eval runs, which don't write to `runs`. */
+export type EvalDay = {
+  day: string;
+  model: string;
+  requests: number;
+  inputTokens: number;
+  outputTokens: number;
+};
+
 /**
  * Per-day usage for the last `days` days. The SQL stays raw so the
  * bucketing is visible: AT TIME ZONE turns each timestamp into Pacific wall
@@ -43,11 +52,11 @@ export type IngestDay = { day: string; uploads: number; requests: number; embedT
  */
 export async function dailyUsage(
   days: number,
-): Promise<{ models: ModelDay[]; ingest: IngestDay[] }> {
+): Promise<{ models: ModelDay[]; ingest: IngestDay[]; evals: EvalDay[] }> {
   const sql = getSql();
   const tz = QUOTA_TIME_ZONE;
   const since = `${days} days`;
-  const [models, ingest] = await Promise.all([
+  const [models, ingest, evals] = await Promise.all([
     sql`
       WITH per_minute AS (
         SELECT (created_at AT TIME ZONE ${tz})::date AS day,
@@ -89,6 +98,26 @@ export async function dailyUsage(
       GROUP BY 1
       ORDER BY 1
     `,
+    // Eval runs keep their calls inside results (one answer per item, one
+    // judge call per batch); unnest both lists into one row per request.
+    sql`
+      WITH calls AS (
+        SELECT er.created_at, er.config->>'chatModel' AS model, i->'answerUsage' AS usage
+        FROM eval_runs er, jsonb_array_elements(er.results->'items') i
+        WHERE i ? 'answerUsage'
+        UNION ALL
+        SELECT er.created_at, c->>'model', c->'usage'
+        FROM eval_runs er, jsonb_array_elements(er.results->'judgeCalls') c
+      )
+      SELECT (created_at AT TIME ZONE ${tz})::date::text AS day, model,
+             count(*)::int AS requests,
+             sum((usage->>'inputTokens')::int)::int AS input_tokens,
+             sum((usage->>'outputTokens')::int)::int AS output_tokens
+      FROM calls
+      WHERE created_at > now() - ${since}::interval
+      GROUP BY 1, 2
+      ORDER BY 1, 2
+    `,
   ]);
   return {
     models: models.map((r) => ({
@@ -109,6 +138,13 @@ export async function dailyUsage(
       uploads: r.uploads,
       requests: r.requests,
       embedTokens: r.embed_tokens,
+    })),
+    evals: evals.map((r) => ({
+      day: r.day,
+      model: r.model,
+      requests: r.requests,
+      inputTokens: r.input_tokens,
+      outputTokens: r.output_tokens,
     })),
   };
 }
