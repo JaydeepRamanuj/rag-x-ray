@@ -10,6 +10,7 @@ import {
 } from "@/lib/db/documents";
 import { insertIngestUsage } from "@/lib/db/ledger";
 import { embedTexts, type EmbedResult } from "@/lib/embeddings";
+import { embedChunksLocal } from "@/lib/ingest/embed-chunks";
 import { extract, sourceTypeFor } from "@/lib/ingest/extract";
 import type { IngestEventMap, IngestEventName } from "@/lib/ingest/events";
 import { encodeSse, sseHeaders } from "@/lib/sse/encoder";
@@ -103,6 +104,8 @@ export async function POST(request: Request) {
           (p) => send("embedding", { atMs: since(), ...p, total: chunks.length }),
         );
         embedded = result;
+        // Free and local, so every upload gets both; the arena compares them.
+        const local = await embedChunksLocal(chunks.map((c) => c.content));
 
         // Replace only after the new copy is fully embedded, so a failed
         // re-upload never leaves you with neither version.
@@ -121,7 +124,12 @@ export async function POST(request: Request) {
           strategy: "recursive",
           chunkSize: defaults.chunkSize,
           overlap: defaults.chunkOverlap,
-          chunks: chunks.map((c, i) => ({ ordinal: i, ...c, embedding: result.vectors[i] })),
+          chunks: chunks.map((c, i) => ({
+            ordinal: i,
+            ...c,
+            embedding: result.vectors[i],
+            embeddingLocal: local?.[i],
+          })),
         }));
         send("stored", { atMs: since(), documentId });
         send("done", {

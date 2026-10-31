@@ -62,6 +62,7 @@ export type NewChunk = {
   startChar: number;
   endChar: number;
   embedding: number[];
+  embeddingLocal?: number[];
 };
 
 /**

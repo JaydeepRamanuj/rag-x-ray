@@ -46,6 +46,8 @@ export const chunkSets = pgTable("chunk_sets", {
   strategy: text().notNull(), // 'fixed' | 'recursive' | 'sentence' | 'semantic'
   chunkSize: integer("chunk_size"), // in tokens
   overlap: integer(),
+  // Semantic only: the neighbour similarity below which it cuts.
+  threshold: real(),
   isActive: boolean("is_active").default(false), // the set chat uses
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 });
