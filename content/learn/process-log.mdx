@@ -1,0 +1,25 @@
+# Lesson 14: Process log
+
+The decisions made while building RAG X-Ray, what broke, and why. One entry per phase, written when the phase ends.
+
+## Phase 0: Foundation (31 Oct 2026)
+
+**What was built:** a Next.js 16 app shell with a sidebar, placeholder pages for every module, the seven-table schema in Neon with pgvector, `lib/config.ts`, this Learn page, and [`/api/health`](/api/health).
+
+### Decisions
+
+- **Model IDs were checked against the providers' docs before writing config, and two of them had already changed.** Groq shut down `llama-3.1-8b-instant` on 16 Aug 2026, so the fast comparison model is now `openai/gpt-oss-20b`, which Groq recommends as its replacement. On Gemini, the newest stable Flash-Lite is `gemini-3.5-flash-lite` and the judge is `gemini-3.8-flash`. The lesson: a spec written weeks ago can already be out of date, so model IDs belong in one file (`lib/config.ts`), not scattered through the code.
+- **Neon's HTTP driver for the app, a direct connection for migrations.** Each query from `@neondatabase/serverless` is a single `fetch`, so there's no connection pool to keep warm in a serverless function. Migrations use the direct (non-`-pooler`) host because PgBouncer's transaction pooling doesn't handle multi-statement DDL well.
+- **pgvector gets its own migration.** drizzle-kit generates tables but not `CREATE EXTENSION`, so `drizzle/0000_enable_pgvector.sql` is a hand-written migration that runs before any table uses the `vector` type.
+- **One vector column per embedding model** (`embedding` at 768 dims, `embedding_local` at 384). Vectors from different models live in different spaces. Comparing them is meaningless, so they should never share a column.
+- **`tsv` is a generated column.** Postgres recomputes `to_tsvector('english', content)` on every write, so keyword search can't drift out of sync with the text.
+- **`run_chunks` got a composite primary key** of (run, chunk, method). The spec didn't name one, but without it the same chunk could be recorded twice for the same method.
+
+### What broke
+
+- **pnpm 12 refused to install** because esbuild's install script was blocked by default. The fix was allowing it explicitly in `pnpm-workspace.yaml`. Newer package managers treat install scripts as a supply-chain risk and make you opt in to each one.
+- **Next.js 16 with Cache Components rejects `export const runtime = 'nodejs'`.** Node is already the default runtime. Instead, the health route calls `await connection()`, which stops Next from prerendering it at build time and serving a frozen "healthy" answer forever.
+
+### What to notice
+
+Open [`/api/health`](/api/health) twice, a few seconds apart, after the app has been idle for more than five minutes. The first `database.ms` is much higher than the second because Neon's compute was asleep. That's the cold start.
