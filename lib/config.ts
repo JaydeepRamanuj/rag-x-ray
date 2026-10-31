@@ -79,8 +79,9 @@ export const chatModels = {
     // Rejects "minimal" with a 400; "low" is its floor.
     reasoning: "low",
     price: { input: 0.75, cachedInput: 0.075, output: 3.75 },
-    // Not recorded yet: check AI Studio and fill in.
-    free: {},
+    // From AI Studio for Jd's project on 2026-10-31. 20 a day is tight: eval
+    // runs judge several answers per call so one run fits in a few requests.
+    free: { rpm: 5, tpm: 250_000, rpd: 20 },
   },
   // Replaces llama-3.1-8b-instant, which Groq shut down on 2026-08-16.
   groqSmall: {
