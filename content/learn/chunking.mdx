@@ -1,0 +1,55 @@
+# Lesson 5: Chunking
+
+## The idea
+
+You can't embed a whole book as one vector: it would blur every topic together, and the model only reads the first 2,048 tokens anyway. So documents are cut into **chunks**, each embedded on its own. Retrieval can only ever return whole chunks, so **where you cut decides what can be found**. A definition split across two chunks may never be retrieved whole.
+
+```text
+document ─▶ [chunk 1][chunk 2][chunk 3] …   each ~400 tokens
+                    └overlap┘
+```
+
+## How it works
+
+**Size is a trade-off.** Small chunks (100–200 tokens) are precise: the vector is about one thing, so it matches a specific question well. But a small chunk may lack the context needed to answer. Large chunks (800+) carry context but dilute the vector, and they fill the prompt faster. This app starts at **400 tokens with 40 tokens of overlap**.
+
+**Overlap** repeats the end of one chunk at the start of the next, so a sentence near a boundary appears whole in at least one chunk. It costs storage and embedding calls, roughly in proportion to its size.
+
+**Recursive splitting**, the strategy built in this phase, cuts at the most natural boundary that fits:
+
+1. Split on paragraph breaks (`\n\n`).
+2. Any piece still too big is split on line breaks, then sentence ends (`. `, `? `, `! `), then clauses (`; `, `, `), then spaces.
+3. Only a single "word" bigger than a chunk (a URL, a base64 blob) is cut mid-way.
+4. Neighbouring pieces are merged back up until a chunk is nearly full.
+
+Every piece is a span of the original text, so each chunk keeps its exact start and end character offsets. That lets the UI highlight it in the source later.
+
+**Cleaning matters as much as cutting.** PDFs wrap lines mid-sentence and hyphenate words across lines. The extractor joins `retrie-\nval` back into `retrieval`, collapses runs of spaces, and keeps blank lines, because those paragraph breaks are the boundaries the chunker cuts on first.
+
+Phase 4 adds three more strategies (fixed-size, sentence-based and semantic) and a lab to compare them side by side.
+
+## In this app
+
+- [`lib/chunking/recursive.ts`](https://github.com/JaydeepRamanuj/rag-x-ray/blob/main/lib/chunking/recursive.ts): `splitSpan()` recurses through the separators, `mergePieces()` packs pieces into chunks and walks back for overlap. Tests in `recursive.test.ts` check that no chunk exceeds the size and that offsets always match the content.
+- [`lib/ingest/extract.ts`](https://github.com/JaydeepRamanuj/rag-x-ray/blob/main/lib/ingest/extract.ts): `normalizeText()` cleans extracted text; `unpdf` reads PDFs page by page.
+- [`lib/tokens/count.ts`](https://github.com/JaydeepRamanuj/rag-x-ray/blob/main/lib/tokens/count.ts): chunk sizes use a local tokenizer (`o200k`), because Gemini's tokenizer isn't published.
+
+## Try it
+
+Upload a document on [Documents](/documents) and read the **chunked** line in the upload log.
+
+## What you should see
+
+Something like "17 chunks, avg 364 tokens (min 272, max 400)". Most chunks land below the 400 limit, because the chunker stops at a paragraph or sentence boundary rather than filling every chunk to the brim. Open a source under a chat answer to see that chunks start and end on whole sentences.
+
+## Interview angle
+
+- **"How do you choose a chunk size?"** Start around 300–500 tokens for prose, then measure retrieval quality on a set of real questions (Phase 5). Code and tables often need structure-aware splitting instead.
+- **"Why overlap?"** So information near a boundary appears whole in at least one chunk. 10–20% is typical; more gives diminishing returns.
+- **"What breaks naive fixed-size chunking?"** Cutting mid-sentence or mid-word, separating a heading from its section, and splitting tables.
+
+## Go deeper
+
+- [LangChain: recursive text splitter](https://python.langchain.com/docs/how_to/recursive_text_splitter/)
+- [Pinecone: chunking strategies](https://www.pinecone.io/learn/chunking-strategies/)
+- [unpdf](https://github.com/unjs/unpdf)

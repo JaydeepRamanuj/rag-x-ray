@@ -40,7 +40,7 @@ export const lessons: Lesson[] = [
     title: "Embeddings",
     summary: "What a vector means, dimensions, task types, cosine similarity.",
     phase: 2,
-    written: false,
+    written: true,
   },
   {
     slug: "chunking",
@@ -48,7 +48,7 @@ export const lessons: Lesson[] = [
     title: "Chunking",
     summary: "Four strategies and their trade-offs.",
     phase: 2,
-    written: false,
+    written: true,
   },
   {
     slug: "vector-databases",
@@ -56,7 +56,7 @@ export const lessons: Lesson[] = [
     title: "Vector databases",
     summary: "pgvector, HNSW vs exact search, distance operators.",
     phase: 2,
-    written: false,
+    written: true,
   },
   {
     slug: "hybrid-retrieval",

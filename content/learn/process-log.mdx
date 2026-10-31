@@ -51,3 +51,28 @@ Open [`/api/health`](/api/health) twice, a few seconds apart, after the app has 
 
 - In the debugger with **slow network** on, the server's work ends at about 1.6 s but the browser is still reading at 11 s. One read can deliver twenty events at once once the client falls behind. That's back-pressure.
 - GPT-OSS bills about 80 input tokens for a five-word question; Gemini bills about 7. The difference is GPT-OSS's chat template, covered in Lesson 2.
+
+## Phase 2: Ingestion and basic RAG (31 Oct 2026)
+
+**What was built:** a [Documents](/documents) page that uploads `.md`, `.txt` and `.pdf` files. Each file is extracted, cleaned, split into ~400-token chunks with 40 tokens of overlap, embedded in batches with Gemini, and stored in pgvector. Embeddings are cached in Upstash Redis. In [Chat](/chat), **Use documents** retrieves the top-k chunks for each question and the answer cites them as [1], [2], with the sources listed underneath.
+
+### Decisions
+
+- **Re-uploads replace, they don't duplicate.** `documents.content_hash` is a sha256 of the extracted text. Uploading the same content again re-embeds it (from the cache) and swaps the old copy out, but only after the new one is ready, so a failed upload never leaves you with neither.
+- **Everything for one document is written in one transaction.** The Neon HTTP driver can't hold a transaction open across awaits, but `db.batch()` sends all the statements together. IDs are generated in the app so later statements can reference earlier rows.
+- **Sources go in the last user message, not the system prompt.** They belong to that question only. Earlier turns are re-sent without their sources, so the prompt doesn't grow by top-k chunks every turn.
+- **Queries are cached too**, with their own task type in the key. Asking the same question again skips the embedding call (about 1.1 s down to about 0.16 s).
+- **A shared password guards uploads and deletes.** With `APP_PASSWORD` unset, local dev is open and production refuses uploads. The comparison is constant-time.
+- **Answers render as Markdown**, with citations rewritten into links that open the matching source.
+
+### What broke
+
+- **The documented embedding config was silently ignored.** Google's docs mark the top-level `taskType` and `outputDimensionality` fields deprecated in favour of `embedContentConfig`. Sent that way, the API returned 3,072-dim vectors with no error. The old fields work, so the code uses them, with a comment explaining why.
+- **Truncated embeddings aren't unit length.** The 768-dim vectors came back with a length of about 0.59. Cosine search doesn't care, but anything that treats the dot product as similarity would be wrong, so vectors are normalised before storage.
+- **No token usage from the embeddings API**, despite the docs. Embedding tokens are estimated locally.
+- **Prettier reformatting files under a running dev server** set off a reload loop that froze the browser pane. Formatting now runs with the dev server stopped.
+
+### What to notice
+
+- `EXPLAIN ANALYZE` on the 18-chunk table shows a sequential scan (0.16 ms) rather than the HNSW index (10 ms when forced). The planner is right: indexes pay off at thousands of rows, not dozens. The app's ~500 ms "search" time is almost entirely network latency to Neon.
+- Relevant and loosely related chunks score within about 0.1 of each other (0.77 vs 0.65). The ranking matters, not the absolute score.

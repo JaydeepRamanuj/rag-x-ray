@@ -1,0 +1,55 @@
+# Lesson 4: Embeddings
+
+## The idea
+
+An **embedding** turns text into a list of numbers (a vector) so that texts with similar meaning get similar vectors. "How do I cancel my order?" and "I want to stop my purchase" share almost no words, but their vectors point in nearly the same direction. That's what lets RAG find the right passage when the question uses different words from the document.
+
+```text
+"Why is the sky blue?"                 → [0.012, -0.031, 0.104, … 768 numbers]
+"Rayleigh scattering makes it blue."   → [0.015, -0.028, 0.097, …]   close
+"Postgres supports JSONB columns."     → [-0.072, 0.044, -0.010, …]  far
+```
+
+## How it works
+
+**A vector is a direction in a high-dimensional space.** Each of the 768 numbers is a coordinate. No single coordinate means "colour" or "database"; meaning is spread across all of them, learned by training the model to pull related texts together and push unrelated ones apart.
+
+**Cosine similarity** measures the angle between two vectors, ignoring their length:
+
+```text
+cos(a, b) = (a · b) / (‖a‖ × ‖b‖)
+```
+
+1 means the same direction, 0 means unrelated, −1 means opposite. In practice, scores between real text sit in a narrow band: in this app, relevant chunks score around 0.70–0.77 and loosely related ones around 0.63–0.69. **The ranking is meaningful; the absolute number isn't.** Don't hard-code a "relevance threshold" like 0.8 without measuring.
+
+**Normalisation.** If every vector has length 1, cosine similarity is just the dot product, which is cheaper. Gemini's `gemini-embedding-001` only normalises its full 3,072-dim output. We ask for 768 dims (a "Matryoshka" truncation: the first 768 numbers are trained to work on their own), and those came back with a length of about **0.59**. The app normalises them itself.
+
+**Task types.** Questions and answers are phrased differently, so the model embeds them differently: chunks are embedded with `RETRIEVAL_DOCUMENT` and questions with `RETRIEVAL_QUERY`. Using the same type for both still works, just worse.
+
+**Embedding is cheap but not free.** Each chunk is embedded once at upload; each question is embedded on every query. Both are cached in Redis, keyed by `model + dims + task type + sha256(text)`, so an identical text never costs a second call. Change any part of the key and it's a different entry, which means a stale vector can never be served after you change a setting.
+
+## In this app
+
+- [`lib/embeddings/gemini.ts`](https://github.com/JaydeepRamanuj/rag-x-ray/blob/main/lib/embeddings/gemini.ts): `batchEmbedContents` over plain `fetch`, plus `normalize()`. The docs say to use a newer `embedContentConfig` field, but on 31 Oct 2026 the API silently ignored it and returned 3,072 dims, so the code uses the older top-level fields that actually work.
+- [`lib/embeddings/index.ts`](https://github.com/JaydeepRamanuj/rag-x-ray/blob/main/lib/embeddings/index.ts): the cache in front of the API, batching by count and tokens, and a per-minute token budget.
+- [`lib/cache.ts`](https://github.com/JaydeepRamanuj/rag-x-ray/blob/main/lib/cache.ts): vectors are stored as base64 Float32 bytes, 3 KB each instead of ~8 KB as JSON.
+
+## Try it
+
+Upload a document on [Documents](/documents), then upload the same file again. In [Chat](/chat), ask the same question twice and watch the **embed** time in the stats line.
+
+## What you should see
+
+The second upload reports every chunk "from cache" and 0 tokens embedded. The second time you ask a question, **embed** drops from about a second to under 200 ms and shows "(cached)". Open the sources under an answer: the scores sit close together, but the cited one usually ranks first.
+
+## Interview angle
+
+- **"Why not just use keyword search?"** Keywords miss synonyms and paraphrases. Embeddings capture meaning, but they miss exact identifiers like error codes, which is why Phase 4 combines both.
+- **"Cosine similarity vs dot product vs Euclidean distance?"** For unit-length vectors they all produce the same ranking. Cosine ignores length, so it's the safe default when you're not sure vectors are normalised.
+- **"How would you reduce embedding costs?"** Cache by content hash, embed only changed chunks, batch requests, and use smaller dimensions where the quality loss is acceptable.
+
+## Go deeper
+
+- [Gemini: embeddings guide](https://ai.google.dev/gemini-api/docs/embeddings)
+- [Kusupati et al., Matryoshka representation learning (2022)](https://arxiv.org/abs/2205.13147)
+- [Reimers & Gurevych, Sentence-BERT (2019)](https://arxiv.org/abs/1908.10084)
