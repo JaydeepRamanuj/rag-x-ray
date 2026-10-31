@@ -80,7 +80,7 @@ export const lessons: Lesson[] = [
     title: "Prompt construction",
     summary: "Context budgeting, citations, lost in the middle, grounding.",
     phase: 3,
-    written: false,
+    written: true,
   },
   {
     slug: "evaluating-rag",
@@ -96,7 +96,7 @@ export const lessons: Lesson[] = [
     title: "Caching and cost control",
     summary: "Embedding cache, prompt caching, rate limits and backoff.",
     phase: 3,
-    written: false,
+    written: true,
   },
   {
     slug: "libraries-vs-hand-rolled",

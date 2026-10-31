@@ -76,3 +76,31 @@ Open [`/api/health`](/api/health) twice, a few seconds apart, after the app has 
 
 - `EXPLAIN ANALYZE` on the 18-chunk table shows a sequential scan (0.16 ms) rather than the HNSW index (10 ms when forced). The planner is right: indexes pay off at thousands of rows, not dozens. The app's ~500 ms "search" time is almost entirely network latency to Neon.
 - Relevant and loosely related chunks score within about 0.1 of each other (0.77 vs 0.65). The ranking matters, not the absolute score.
+
+## Phase 3: Prompt inspector and token ledger (31 Oct 2026)
+
+**What was built:** an **Inspect** button on every chat answer, opening the prompt inspector at `/runs/[id]/prompt`. It shows the exact messages sent, split into system prompt, history, framing, numbered sources and question, with a token bar per part, and it can count each part with the model's own tokenizer. Edit the rules, drop sources or switch model, then **Re-run** to compare the answers side by side. The [ledger](/ledger) lists every run's tokens, latency and paid-tier cost, charts daily usage against each model's free quota, and re-prices any run with a what-if panel. Lessons [9](/learn/prompt-construction) and [11](/learn/caching-and-cost).
+
+### Decisions
+
+- **Saved prompts are taken apart, not re-derived.** `final_prompt` is the source of truth. The inspector rebuilds the sources from `run_chunks` and uses them only if they reproduce the saved text exactly. If the chunks have gone (document deleted or re-uploaded), it parses the numbered blocks back out of the text instead. Either way, it shows what was sent rather than what the code would send today.
+- **Estimates per part, the provider's number for the total.** Each part gets a local o200k estimate; the bill comes from `runs.input_tokens`. The gap between them is shown, not hidden: for Gemini it's almost all tokenizer (its per-part counts summed to 2,263 against 2,260 billed), while for GPT-OSS it's mostly chat template.
+- **Token counting stays on the server.** The o200k vocabulary is too big to ship to the browser, so estimates are made when the page renders and when the ledger loads.
+- **A re-run is a normal run with a parent.** It goes through `/api/chat` in raw mode with `parentRunId`, so it is timed, saved and priced like any other run, and shows in the ledger. Its chunks are saved with `used_in_prompt` true or false, which is what that column was waiting for since Phase 0.
+- **Migration `0004_ledger_usage`:** a `reasoning_tokens` column on `runs` (thinking was only inside `output_tokens` before), and an `ingest_usage` table so upload embeddings count towards the daily chart. Upload usage is logged even if storing the document then fails, and kept when the document is deleted (`ON DELETE SET NULL`), because the quota was used either way.
+- **Days are Pacific days.** Gemini's daily quota resets at midnight Pacific, so the chart buckets with `AT TIME ZONE 'America/Los_Angeles'` in SQL, and the axis fills in empty days in JS.
+- **Gemini's free limits come from Jd's AI Studio** (Flash-Lite: 15 RPM, 250K TPM, 500 RPD). Google no longer publishes them.
+- **The what-if holds output constant** and scales input by the ratio each run actually showed between the provider's count and our estimate. Switching provider drops that ratio and marks the result approximate.
+
+### What broke
+
+- **The disk filled up mid-phase**, and pnpm couldn't install Recharts. Then shadcn's own `pnpm add` used a different store path than the existing `node_modules`. The fix was installing Recharts directly with the project's store (`--store-dir`), then letting shadcn write only `chart.tsx`.
+- **Recharts drew nothing in a hidden browser pane.** React 19 reveals streamed Suspense content on an animation frame, and a background tab doesn't get any, so the ledger stayed on "Loading runs…" with its HTML already delivered. Not an app bug, but worth knowing when a page "hangs" only while you're not looking.
+- **The React Compiler lint rule rejected `Math.random()` in render** (a fallback list key), and a counter mutated inside `map()` during render. Both became pure derivations.
+- **Clicking Inspect the instant an answer finished could beat the database write**, since runs are saved with `after()`. The inspector page retries the lookup briefly before giving up.
+
+### What to notice
+
+- 95% of a top-5 RAG prompt is sources. Dropping the two lowest-ranked of five took a run from 2,260 to 1,347 input tokens with the same answer, because it only cited [1] and [3].
+- Gemini's implicit cache works on the free tier, but only after about 20 s and only on a prefix (4,071 of 6,217 tokens). None of the RAG runs so far had a cached token: the stable prefix is under 100 tokens.
+- Output costs 8.3× input on Flash-Lite, so across 22 runs the bill was split about 49/51 between input and output, even though there was 8× more input.

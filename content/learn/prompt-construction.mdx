@@ -1,0 +1,69 @@
+# Lesson 9: Prompt construction
+
+## The idea
+
+Retrieval finds the chunks, but the model only sees what the **prompt** gives it. Building the prompt means deciding what goes in (rules, earlier turns, sources, the question), in what order, and with what labels, all within a token budget. In RAG, most of that budget goes to the sources:
+
+```text
+┌ system ─────────── rules: use only the sources, cite them, admit gaps    ~70 tokens
+├ history ────────── earlier questions and answers, without their sources  grows per turn
+└ last user message
+   ├ "Sources:"
+   ├ [1] build-plan.md (chunk 8) ……………………………………………                      ~390 tokens each
+   ├ [2] … [5]
+   └ "Question: Are we using drizzle?"                                      ~10 tokens
+```
+
+## How it works
+
+**Grounding instructions.** Each line of the system prompt closes one failure mode: answering from general knowledge ("use only the numbered sources"), inventing citations ("only cite numbers that appear"), and guessing ("if the sources don't contain the answer, say so"). Change one line and re-run to see which failure comes back.
+
+**Citations by number.** Each source gets a short label, `[n] title (chunk k)`, and the model is told to cite `[n]`. Numbers are cheap to generate and easy to check: the app parses them back out, links them to the sources, and marks the sources that were never cited.
+
+**Where the sources go.** They go in the last user message, not the system prompt, because they belong to this question only. Earlier turns are re-sent without their sources, so a long chat grows by one question and one answer per turn, not by five chunks.
+
+**The budget.** A real run, "Are we using drizzle?" on Gemini 3.5 Flash-Lite with top 5:
+
+| Part          | Estimate (o200k) | Gemini's count |
+| ------------- | ---------------: | -------------: |
+| System prompt |               69 |             75 |
+| History ×2    |               18 |             19 |
+| Framing       |                6 |              7 |
+| Sources ×5    |            1,945 |          2,150 |
+| Question      |               11 |             12 |
+| **Billed**    |                  |      **2,260** |
+
+95% of the prompt is retrieved text. Gemini's per-part counts add up to 2,263, within 3 of the bill, so Gemini adds almost no chat-template overhead. The 211-token gap from our estimate is its tokenizer: it counts the same sources about 10% higher than o200k.
+
+**Lost in the middle.** Long-context models use information at the start and end of the context better than information in the middle ([Liu et al., 2023](https://arxiv.org/abs/2307.03172)). Retrieval ranks the best chunk first, which helps. With top 5 and short chunks the effect is small, but it's one reason more sources isn't automatically better: each extra chunk adds cost and pushes the others further from the edges.
+
+**Fewer sources can give the same answer.** Dropping the two lowest-ranked sources of the run above cut input from 2,260 to 1,347 tokens and the cost from $0.000868 to $0.000619. The answer was essentially the same, because it only ever cited [1] and [3].
+
+## In this app
+
+- [`lib/prompt/builder.ts`](https://github.com/JaydeepRamanuj/rag-x-ray/blob/main/lib/prompt/builder.ts): the grounding rules, `formatSources()` and `buildRagMessages()`.
+- [`lib/prompt/anatomy.ts`](https://github.com/JaydeepRamanuj/rag-x-ray/blob/main/lib/prompt/anatomy.ts): `splitPrompt()` takes a saved prompt apart again, rebuilding the sources from `run_chunks` and checking they match the saved text exactly. `promptParts()` counts each part. `rebuildMessages()` makes the edited prompt for a re-run, renumbering the sources that remain.
+- [`app/(app)/runs/[id]/prompt`](https://github.com/JaydeepRamanuj/rag-x-ray/blob/main/app/%28app%29/runs/%5Bid%5D/prompt/page.tsx): the prompt inspector. Re-runs go to `/api/chat` in raw mode with a `parentRunId`, and the kept and removed chunks are saved to `run_chunks` with `used_in_prompt` true or false.
+- [`app/api/tokens/route.ts`](https://github.com/JaydeepRamanuj/rag-x-ray/blob/main/app/api/tokens/route.ts): counts each part with the model's own tokenizer (Gemini's `countTokens` API, or GPT-OSS's o200k_harmony locally).
+
+## Try it
+
+Ask a question in [Chat](/chat) with **Use documents** on, then click **Inspect** under the answer. Click **Count with … tokenizer**. Then turn off the two lowest-scoring sources and click **Re-run**. Finally, try deleting the line "If the sources don't contain the answer, say so plainly instead of guessing." and ask something your documents don't cover.
+
+## What you should see
+
+- The sources take 90% or more of the bar. The system prompt and question are slivers.
+- Gemini's count is higher than the o200k estimate, mostly in the sources. On GPT-OSS the gap comes mostly from its chat template instead: about 80 tokens per request (Lesson 2).
+- With sources dropped, the re-run's input falls by roughly their estimated size, and its answer cites fewer numbers, or says it can't answer if you removed the one that mattered.
+- Without the "say so" rule, an off-topic question is more likely to get a confident answer from general knowledge.
+
+## Interview angle
+
+- **"How do you fit retrieved context into a context window?"** Budget it: fixed parts (rules, question), a cap on history (drop or summarise old turns), and the rest for sources. Pick top-k × chunk size to fit, and measure with the provider's token counter, not character counts.
+- **"How do you stop a RAG system from hallucinating?"** Grounding instructions, numbered sources with required citations, an explicit "say you don't know" path, and then checking it: every cited number must exist, and faithfulness should be evaluated (Lesson 10).
+- **"Where should retrieved documents go, system prompt or user message?"** With the question they answer. That keeps the system prompt stable (which helps prompt caching, Lesson 11) and stops old sources piling up in the history.
+
+## Go deeper
+
+- [Liu et al., Lost in the Middle (2023)](https://arxiv.org/abs/2307.03172)
+- [Gemini API: count tokens](https://ai.google.dev/gemini-api/docs/tokens)
