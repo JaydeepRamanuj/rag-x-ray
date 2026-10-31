@@ -99,3 +99,22 @@ export async function localEmbeddingsStatus(): Promise<
     return { ok: false, reason: err instanceof Error ? err.message : String(err) };
   }
 }
+
+// The chunking lab re-runs semantic splitting on every slider move, and
+// most sentence windows are the same each time. Local vectors are cheap but
+// not free (~3 s for 400 windows on a laptop), so recent ones are memoised.
+const memo = new Map<string, number[]>();
+const MEMO_LIMIT = 20_000;
+
+/** embedLocal with an in-process memo in front. Lost on restart, which is fine. */
+export async function embedLocalMemo(texts: string[]): Promise<number[][]> {
+  const missing = [...new Set(texts.filter((t) => !memo.has(t)))];
+  const vectors = await embedLocal(missing);
+  missing.forEach((t, i) => memo.set(t, vectors[i]));
+  // Map keeps insertion order, so the first keys are the oldest.
+  for (const key of memo.keys()) {
+    if (memo.size <= MEMO_LIMIT) break;
+    memo.delete(key);
+  }
+  return texts.map((t) => memo.get(t) ?? []);
+}

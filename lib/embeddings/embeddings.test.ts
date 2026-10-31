@@ -65,7 +65,7 @@ describe("meanPool", () => {
   it("averages unmasked token vectors and normalises the result", () => {
     // batch 1, 3 tokens, 2 dims; the last token is padding.
     const hidden = { dims: [1, 3, 2], data: new Float32Array([3, 0, 1, 4, 100, 100]) };
-    const mask = { dims: [1, 3], data: new BigInt64Array([1n, 1n, 0n]) };
+    const mask = { dims: [1, 3], data: new BigInt64Array([1, 1, 0].map(BigInt)) };
     const [v] = meanPool(hidden, mask);
     // mean of (3,0) and (1,4) is (2,2), which normalises to (0.707, 0.707).
     expect(v[0]).toBeCloseTo(Math.SQRT1_2);
