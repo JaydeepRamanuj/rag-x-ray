@@ -120,6 +120,8 @@ export const embeddingModels = {
     provider: "local",
     label: "all-MiniLM-L6-v2 (local)",
     dimensions: 384,
+    // Trained on at most 256 word pieces. Transformers.js would accept 512,
+    // silently dropping the rest, so lib/embeddings/local.ts caps it here.
     maxInputTokens: 256,
     price: { input: 0 },
     free: {},
