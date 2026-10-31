@@ -107,6 +107,7 @@ export const embeddingModels = {
     provider: "gemini",
     label: "Gemini Embedding 001",
     // Matryoshka-style: 768 is a recommended truncation of the 3072 default.
+    // Truncated vectors come back un-normalised, so we L2-normalise them.
     dimensions: 768,
     maxInputTokens: 2_048,
     price: { input: 0.15 },
@@ -152,6 +153,14 @@ export const limits = {
   /** Vercel functions time out on long ingestion, so cap per-upload size. */
   maxPagesPerUpload: 50,
   maxTotalPages: 300,
+  /** Vercel rejects function request bodies over 4.5 MB. */
+  maxUploadBytes: 4 * 1024 * 1024,
+  /** ~300 pages at ~500 tokens a page; keeps re-embedding within a day's quota. */
+  maxTotalTokens: 150_000,
+  /** Texts per batchEmbedContents call; Google caps a batch at 100. */
+  embedBatchSize: 100,
+  /** Stay under the free tier's embedding tokens-per-minute with some margin. */
+  embedTokensPerMinute: 25_000,
   /** Eval mode runs one question at a time with this delay to stay under RPM. */
   evalDelayMs: 4_000,
   retry: { maxAttempts: 4, baseDelayMs: 1_000, maxDelayMs: 30_000 },
