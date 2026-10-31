@@ -64,7 +64,7 @@ export const lessons: Lesson[] = [
     title: "Keyword search and hybrid retrieval",
     summary: "Full-text search, the BM25 idea, RRF.",
     phase: 4,
-    written: false,
+    written: true,
   },
   {
     slug: "reranking",
@@ -72,7 +72,7 @@ export const lessons: Lesson[] = [
     title: "Reranking",
     summary: "Bi-encoders vs cross-encoders, cost vs quality.",
     phase: 4,
-    written: false,
+    written: true,
   },
   {
     slug: "prompt-construction",

@@ -104,3 +104,32 @@ Open [`/api/health`](/api/health) twice, a few seconds apart, after the app has 
 - 95% of a top-5 RAG prompt is sources. Dropping the two lowest-ranked of five took a run from 2,260 to 1,347 input tokens with the same answer, because it only cited [1] and [3].
 - Gemini's implicit cache works on the free tier, but only after about 20 s and only on a prefix (4,071 of 6,217 tokens). None of the RAG runs so far had a cached token: the stable prefix is under 100 tokens.
 - Output costs 8.3× input on Flash-Lite, so across 22 runs the bill was split about 49/51 between input and output, even though there was 8× more input.
+
+## Phase 4: Chunking lab and retrieval arena (31 Oct 2026)
+
+**What was built:** three more chunkers (fixed, sentence, semantic) next to recursive, and the [chunking lab](/lab/chunking), which splits one document four ways side by side with chunks tinted, overlaps shaded and mid-word cuts marked. Any strategy can be saved as a new chunk set, then activated, re-embedded or deleted. Local embeddings (all-MiniLM-L6-v2 through Transformers.js) run inside the server. Retrieval gained Postgres full-text search, Reciprocal Rank Fusion and a cached Cohere reranker, compared in the [retrieval arena](/lab/retrieval). Chat got a vector / keyword / hybrid switch and an optional rerank. Lessons [5](/learn/chunking) (expanded), [7](/learn/hybrid-retrieval) and [8](/learn/reranking).
+
+### Decisions
+
+- **The lab previews in memory and saves on request.** Sliders re-chunk on the server with no API calls, because semantic splitting uses the local model. Saving embeds with both models and stores a new set that starts **inactive**, so an experiment never changes chat's answers until you choose it.
+- **Semantic splitting runs on the local model.** It needs one embedding per sentence (416 for the build plan), which would eat Gemini's daily quota. Each sentence is embedded with its neighbours, and recent vectors are memoised in memory so the threshold slider stays quick after the first ~3.3 s run.
+- **The local model is called without the `pipeline()` helper.** The helper truncates at the tokenizer's 512-token limit, but MiniLM was trained on at most 256. Calling the tokenizer and model directly caps input at 256 and makes the mean pooling visible. The vectors match the helper's to more than 0.9999 on short text.
+- **fp32 weights, CPU binaries only.** fp32 embedded 64 sentences in 73 ms (q8: 42 ms) and is the reference quality. onnxruntime-node's install script only downloads CUDA add-ons, so pnpm is told not to run it.
+- **Keyword search ORs the query terms.** `plainto_tsquery` joins words with AND, and three natural questions out of three matched nothing.
+- **Rerank reorders hybrid's top 20.** It's cached in Upstash per query and candidate list, and every real call is counted per month in Redis, since Cohere doesn't report what's left of the trial's 1,000 calls. On in the arena, off in chat, password-guarded in both.
+- **Migration `0005_chunk_sets_threshold`** (applied): the semantic threshold is stored with its set.
+- **Uploads now store local vectors too**, and existing chunks were backfilled with the arena's **Embed local** button.
+
+### What broke
+
+- **Cohere's docs and API disagree on billing.** The pricing page explains Rerank in "search units". The live API reports `billed_units.input_tokens` for `rerank-v5.0-fast` (about 6,900 per 20-chunk call), and the Rerank 5 launch post confirms $0.02 per 1M tokens. The pricing page's per-unit price is rendered client-side, so even a fetch of it didn't show one.
+- **The Transformers.js pipeline silently drops text past 512 tokens.** A long text and the same text with a completely different ending scored 0.9998. No error, no warning.
+- **`Intl.Segmenter` splits after "Dr."** and returns a blank line as its own sentence. Both are glued back on.
+- **Only one `next dev` per folder.** Another session's dev server was already running here, and Next 16 refuses a second one, so this phase was checked against that server, and files were formatted one at a time through Prettier's stdin instead of `prettier --write`.
+- **Neon's tagged-template client can't nest one SQL fragment inside another**, so the embedding column choice is two whole queries rather than an interpolated column name. Column names can't be parameters anyway.
+
+### What to notice
+
+- **Hybrid beats vector on exact names.** For "umap-js", Gemini vector search's top 3 contains none of the three chunks that mention it; keyword and hybrid return all three.
+- **Rerank fixes the order.** For "Which library draws the 2D projection, and where does it run?", the answer chunk is 2nd in vector (0.616 against 0.619 for a wrong chunk) and 3rd in hybrid. Rerank puts it 1st at 0.644, with the next at 0.219.
+- At size 400, fixed splitting cut 32 of 416 sentences; recursive, sentence and semantic cut none. The cost of overlap is visible as stored / source: 1.11× for fixed at 10%, 1.25× at 20%.

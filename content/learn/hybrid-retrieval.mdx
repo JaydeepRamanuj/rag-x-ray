@@ -1,0 +1,93 @@
+# Lesson 7: Keyword search and hybrid retrieval
+
+## The idea
+
+Vector search finds text that **means** the same as the question, even with different words. It is weak at things that only match **exactly**: a library name, an error code, an environment variable, a version number. To an embedding model, `umap-js` is a rare string with no strong meaning, and "a 2D plotting library" is a fine paraphrase of it.
+
+Keyword search is the opposite: literal, blind to synonyms, but very good at rare exact terms. **Hybrid retrieval** runs both and merges the two ranked lists, so each covers the other's blind spot.
+
+```text
+question ─┬─▶ vector search  (meaning)  ─▶ ranked list A ─┐
+          └─▶ keyword search (words)    ─▶ ranked list B ─┴─▶ RRF ─▶ one list
+```
+
+## How it works
+
+### Full-text search in Postgres
+
+Each chunk has a generated `tsv` column: `to_tsvector('english', content)`. That's the text lowercased, stemmed ("replaced" → `replac`) and stripped of stop words, as a sorted list of lexemes with positions. A GIN index maps each lexeme to the chunks that contain it.
+
+The question goes through the same pipeline with `plainto_tsquery`:
+
+```sql
+SELECT plainto_tsquery('english', 'What is the RRF constant k?');
+-- 'rrf' & 'constant' & 'k'
+```
+
+**The `&` is the trap.** It means AND: a chunk must contain every word. A natural question almost never has all its words in one chunk. On this app's documents, three questions out of three matched **zero** chunks. So the app turns each `&` into `|` (OR) and lets ranking sort it out, which is how BM25-style engines treat a query.
+
+Tokenising is literal too: `llama-3.1-8b-instant` becomes `'llama' | '-3.1' | '-8' | 'b-instant' | 'b' | 'instant'`. Hyphens and digits get split in ways you wouldn't guess.
+
+### Ranking: ts_rank_cd is not BM25
+
+`ts_rank_cd` ("cover density") scores a chunk by how often the query words appear and how close together they are. **BM25**, the standard in search engines, also weighs each word by how rare it is across the corpus (IDF) and dampens repeated words. Postgres's built-in ranking has **no IDF**: a rare, telling word like `429` counts no more than a common one like `error`. It's a fair stand-in at this scale. For real BM25 in Postgres there are extensions such as ParadeDB's `pg_search`.
+
+### Merging: Reciprocal Rank Fusion
+
+The two lists' scores aren't comparable: cosine similarities here cluster around 0.6, while `ts_rank_cd` gives 0.1 to 1.3. Normalising them is fiddly. **RRF** ignores scores and uses only ranks:
+
+```text
+RRF(chunk) = Σ over lists  1 / (k + rank in that list)        k = 60
+```
+
+A chunk at rank 2 in both lists scores 1/62 + 1/62 = 0.0323. A chunk at rank 1 in only one list scores 1/61 = 0.0164. **Agreement beats a single win.** The constant k damps the gap between neighbouring ranks: with k = 0, rank 1 (1.0) would be worth twice rank 2 (0.5); with k = 60 they're 0.0164 and 0.0161. RRF can only promote what a list found, so each method fetches a wider pool (20 here) than the final top-k.
+
+## In this app
+
+- [`lib/retrieval/keyword.ts`](https://github.com/JaydeepRamanuj/rag-x-ray/blob/main/lib/retrieval/keyword.ts): `keywordSearch()`, with the AND-to-OR rewrite in SQL.
+- [`lib/retrieval/hybrid.ts`](https://github.com/JaydeepRamanuj/rag-x-ray/blob/main/lib/retrieval/hybrid.ts): `reciprocalRankFusion()`, a pure function with tests. Each fused chunk keeps its rank in each list (`ranks: [vector, keyword]`), which the arena shows as **V2 · K1**.
+- [`lib/retrieval/index.ts`](https://github.com/JaydeepRamanuj/rag-x-ray/blob/main/lib/retrieval/index.ts): `retrieveAll()` for the arena and `retrieveForChat()`. Chat now has a **vector / keyword / hybrid** switch. The method is saved in the run's config and in `run_chunks.method`.
+
+```sql
+WITH q AS (
+  SELECT replace(plainto_tsquery('english', $1)::text, ' & ', ' | ')::tsquery AS query
+)
+SELECT c.id, ts_rank_cd(c.tsv, q.query) AS score
+FROM chunks c CROSS JOIN q
+WHERE c.tsv @@ q.query          -- the GIN index serves @@
+ORDER BY score DESC
+LIMIT 20;
+```
+
+## Try it
+
+Open the [retrieval arena with "umap-js"](/lab/retrieval?q=umap-js&k=3&rerank=0) and press **Search**. Then switch the embedding model to the local one and search again.
+
+## What you should see
+
+Three chunks of `build-plan.md` mention `umap-js` (chunks 8, 11 and 16).
+
+| Method (Gemini, top 3) | Chunks returned | Hits   |
+| ---------------------- | --------------- | ------ |
+| Vector                 | 3, 13, 6        | 0 of 3 |
+| Keyword                | 8, 11, 16       | 3 of 3 |
+| Hybrid (RRF)           | 11, 8, 16       | 3 of 3 |
+
+Vector search misses all three: to the embedding model the bare name means little. Keyword finds every one, and hybrid keeps them, because each sits in the keyword list's top 3 and somewhere in the vector list's top 20. With the local model, vector finds one (16), and hybrid again finds all three.
+
+For natural questions, the two lists mostly agree ("What happens when Neon compute sleeps?" puts chunk 17 first in both), and hybrid changes little. That's the point: hybrid costs one extra cheap SQL query and rescues the exact-match cases.
+
+`EXPLAIN ANALYZE` on the keyword query shows a sequential scan (0.08 ms), not the GIN index. Like HNSW in Lesson 6, an index only pays off with thousands of rows.
+
+## Interview angle
+
+- **"When does keyword search beat vector search?"** Exact identifiers: product names, error codes, function names, IDs, version numbers, rare jargon. Also very short queries, where an embedding has too little to go on.
+- **"Why RRF instead of a weighted sum of scores?"** Scores from different systems are on different, shifting scales. RRF needs only ranks, has one parameter, and is robust. A weighted sum can do better, but only after you tune and normalise it per corpus.
+- **"What's BM25, and does Postgres do it?"** Term frequency with saturation, inverse document frequency and length normalisation. Postgres's `ts_rank` has frequency and proximity but no IDF; extensions add true BM25.
+
+## Go deeper
+
+- [Cormack, Clarke & Büttcher (2009): Reciprocal Rank Fusion](https://plg.uwaterloo.ca/~gvcormac/cormacksigir09-rrf.pdf)
+- [PostgreSQL docs: full-text search, ranking](https://www.postgresql.org/docs/current/textsearch-controls.html#TEXTSEARCH-RANKING)
+- [Robertson & Zaragoza: the probabilistic relevance framework (BM25)](https://www.staff.city.ac.uk/~sbrp622/papers/foundations_bm25_review.pdf)
+- [ParadeDB: BM25 in Postgres](https://docs.paradedb.com/)

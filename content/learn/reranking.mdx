@@ -1,0 +1,79 @@
+# Lesson 8: Reranking
+
+## The idea
+
+Retrieval has to be fast over every chunk, so it compares **separately made** vectors: the question is embedded alone, each chunk was embedded alone, and similarity is one dot product. The model never sees the question and the chunk together.
+
+A **reranker** does: it reads the question and one candidate side by side and scores how well that candidate answers it. That's far more accurate, and far too slow to run over a whole corpus. So you use both. Retrieval cheaply narrows thousands of chunks to about 20 candidates, and the reranker carefully reorders those 20.
+
+```text
+all chunks ──(vector + keyword, ms)──▶ 20 candidates ──(cross-encoder, ~1 s)──▶ best 5
+```
+
+## How it works
+
+**Bi-encoder** (an embedding model): `score = embed(question) · embed(chunk)`. Chunk vectors are computed once at upload and indexed, so a search is a lookup. The catch is that everything about a chunk must be squeezed into one fixed vector before anyone knows the question.
+
+**Cross-encoder** (a reranker): `score = model(question + chunk)`. The question and the chunk go through the transformer together, so attention can connect "where does it run?" to "in the browser" in that specific chunk. Nothing can be precomputed, because each score needs its own forward pass. 20 candidates means 20 passes per query.
+
+|                         | Bi-encoder                         | Cross-encoder                     |
+| ----------------------- | ---------------------------------- | --------------------------------- |
+| Sees question and chunk | separately                         | together                          |
+| Precompute              | chunk vectors, once                | nothing                           |
+| Cost per query          | one embedding plus an index lookup | one model pass per candidate      |
+| Scores                  | cosine, bunched together           | relevance from 0 to 1, spread out |
+| Used for                | recall: find candidates            | precision: order them             |
+
+A reranker can only reorder what retrieval found. If the right chunk isn't among the candidates, no reranker can rescue it, which is why the candidate pool is wider than top-k.
+
+## In this app
+
+- [`lib/retrieval/rerank.ts`](https://github.com/JaydeepRamanuj/rag-x-ray/blob/main/lib/retrieval/rerank.ts): one `fetch` to Cohere's `POST /v2/rerank` with the question and the 20 hybrid candidates. `applyRerank()` maps Cohere's `{ index, relevance_score }` results back onto the chunks, keeping each chunk's previous rank so the arena can show how far it moved.
+- **Cached per query and candidate list** in Upstash. The key is a hash of the question plus the exact candidate ids in order, so a re-chunked document (new chunk ids) gets a fresh key. The full order is cached, so changing top-k reuses it.
+- **Counted.** The trial key allows 10 calls a minute and 1,000 a month, and Cohere doesn't report what's left of the month, so the app counts its own calls in Redis per calendar month and shows "N of 1,000".
+- **Rerank is on by default in the arena and off in chat**, as the plan's free-tier table suggests. Both need the app password (open in local dev).
+
+```ts
+const { response } = await fetchWithRetry("https://api.cohere.com/v2/rerank", {
+  method: "POST",
+  headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+  body: JSON.stringify({
+    model: "rerank-v5.0-fast",
+    query,
+    documents: candidates.map((c) => c.content),
+    top_n: candidates.length,
+  }),
+});
+```
+
+**What the API taught us.** Cohere's pricing page still explains Rerank in "search units" (one query with up to 100 documents). The live response for `rerank-v5.0-fast` reports `billed_units.input_tokens` instead: 41 tokens for a tiny test, about 6,900 for 20 real chunks. The Rerank 5 launch post confirms per-token pricing: $0.02 per 1M tokens for Fast, $0.05 for Pro. The trial limits come back as headers (`x-trial-endpoint-call-limit: 10`, `x-endpoint-monthly-call-limit: 1000`).
+
+## Try it
+
+Open the arena with ["Which library draws the 2D projection, and where does it run?"](/lab/retrieval?q=Which%20library%20draws%20the%202D%20projection%2C%20and%20where%20does%20it%20run%3F&k=5) and press **Search** with rerank on. Hover chunk 8 to find it in every column.
+
+## What you should see
+
+The answer is in chunk 8 of `build-plan.md`, the tech-decisions table row "2D projection | `umap-js` in the browser, PCA as a fallback".
+
+| Method          | 1st           | 2nd           | 3rd           | Where chunk 8 lands |
+| --------------- | ------------- | ------------- | ------------- | ------------------- |
+| Vector          | 7 (0.619)     | **8 (0.616)** | 6 (0.604)     | 2nd, 0.003 behind   |
+| Keyword         | 10 (0.6)      | 13 (0.5)      | 7 (0.4)       | not in top 5        |
+| Hybrid          | 7 (0.032)     | 10 (0.032)    | **8 (0.031)** | 3rd                 |
+| Hybrid + rerank | **8 (0.644)** | 11 (0.219)    | 16 (0.026)    | **1st, ↑2**         |
+
+Vector similarities are bunched within 0.03 of each other, so the order among them is close to noise. Hybrid makes it slightly worse here, because chunk 10 matches the words "library" and "run". The reranker puts chunk 8 first with a clear gap (0.644 against 0.219), and pulls up chunk 11 ("UMAP vs PCA" in the embedding explorer) from outside hybrid's top 5. The rerank call billed 6,980 tokens (rerank calls here take 1.1–1.6 s), which is $0.00014 at list price and 1 of the month's 1,000 trial calls. Search again: the column says **Cached**, and it takes no time or quota.
+
+## Interview angle
+
+- **"Bi-encoder vs cross-encoder?"** Bi-encoders embed query and document separately, so documents can be precomputed and indexed: fast, good for recall. Cross-encoders score the pair jointly: slow, more accurate, good for reordering a short list.
+- **"Where does a reranker go, and how many candidates?"** After first-stage retrieval (often hybrid), over 20–100 candidates, keeping the top 3–10 for the prompt. More candidates raise recall but cost latency and money linearly.
+- **"Is reranking worth the latency?"** Measure it: rerank adds about a second here. It often lets you send fewer, better chunks, which saves input tokens and can improve answers. Cache results for repeated queries.
+
+## Go deeper
+
+- [Nogueira & Cho (2019): Passage re-ranking with BERT](https://arxiv.org/abs/1901.04085)
+- [Sentence-Transformers: retrieve and re-rank](https://www.sbert.net/examples/applications/retrieve_rerank/README.html)
+- [Cohere: Rerank API reference](https://docs.cohere.com/reference/rerank)
+- [Cohere: Rerank 5 launch post](https://cohere.com/blog/rerank-5)
