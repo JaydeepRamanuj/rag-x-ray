@@ -65,3 +65,31 @@ export async function setMany(entries: [string, string][], ttlSeconds: number): 
 export function cacheEnabled(): boolean {
   return redis() !== null;
 }
+
+/** INCR with an expiry set on first use. Returns null when the cache is off. */
+export async function increment(key: string, ttlSeconds: number): Promise<number | null> {
+  const r = redis();
+  if (!r) return null;
+  try {
+    const [value] = await r
+      .pipeline()
+      .incr(key)
+      .expire(key, ttlSeconds, "NX")
+      .exec<[number, number]>();
+    return value;
+  } catch (err) {
+    console.warn("cache increment failed:", err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
+/** Reads a counter without changing it. */
+export async function readCounter(key: string): Promise<number | null> {
+  const r = redis();
+  if (!r) return null;
+  try {
+    return Number((await r.get<number>(key)) ?? 0);
+  } catch {
+    return null;
+  }
+}

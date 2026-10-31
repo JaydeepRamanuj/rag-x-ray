@@ -134,8 +134,9 @@ export const rerankModel = {
   label: "Cohere Rerank 5 Fast",
   // Trial key: 10 calls/minute and 1,000 calls/month in total.
   free: { rpm: 10, callsPerMonth: 1_000 },
-  // Cohere's launch post quotes per-token pricing for Rerank 5; re-check the
-  // pricing page in Phase 4 when rerank is wired up.
+  // Per 1M tokens (query + documents), from the Rerank 5 launch post; the
+  // pricing page's "search unit" FAQ describes older models. Checked
+  // 2026-10-31, and the API's billed_units agrees: it reports input_tokens.
   price: { input: 0.02 },
 } as const;
 
@@ -151,6 +152,11 @@ export const defaults = {
   chunkOverlap: 40, // tokens
   /** RRF constant from the original paper; larger k flattens rank differences. */
   rrfK: 60,
+  /**
+   * How many results each method fetches before fusing or reranking. Hybrid
+   * can only promote a chunk that one of its lists found.
+   */
+  candidates: 20,
 } as const;
 
 export const limits = {
