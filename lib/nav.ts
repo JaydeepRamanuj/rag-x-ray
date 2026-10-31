@@ -1,6 +1,7 @@
 import {
   BookOpen,
   Coins,
+  FileText,
   FlaskConical,
   MessageSquare,
   Orbit,
@@ -30,6 +31,13 @@ export const navGroups: { label: string; items: NavItem[] }[] = [
         icon: MessageSquare,
         phase: 1,
         description: "Chat over your documents. Every answer can be inspected.",
+      },
+      {
+        href: "/documents",
+        title: "Documents",
+        icon: FileText,
+        phase: 2,
+        description: "Upload, chunk and embed the files chat answers from.",
       },
     ],
   },
