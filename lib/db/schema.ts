@@ -88,6 +88,10 @@ export const runs = pgTable("runs", {
   config: jsonb().notNull(), // provider, model, top_k, method, rerank, temperature...
   finalPrompt: jsonb("final_prompt").notNull(), // exact messages sent
   answer: text(),
+  // 'ok' | 'stopped' | 'error'. A stopped run keeps its partial answer, so
+  // you can see what the tokens you paid for actually bought.
+  status: text().notNull().default("ok"),
+  error: text(),
   embedTokens: integer("embed_tokens"),
   inputTokens: integer("input_tokens"),
   outputTokens: integer("output_tokens"),
