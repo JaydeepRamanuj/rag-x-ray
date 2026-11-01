@@ -6,6 +6,16 @@ const nextConfig: NextConfig = {
   partialPrefetching: true,
   // Lets Learn lessons in content/learn/*.mdx be imported as React components.
   pageExtensions: ["ts", "tsx", "md", "mdx"],
+  // The library comparison page shows these files' source, read from disk.
+  outputFileTracingIncludes: {
+    "/lab/sdk": [
+      "./app/api/chat/route.ts",
+      "./app/api/chat-sdk/route.ts",
+      "./lib/llm/*.ts",
+      "./lib/sse/*.ts",
+      "./lib/chat/events.ts",
+    ],
+  },
   // Chat is the home page. A config redirect happens before rendering, so
   // there's no empty "/" page to prerender.
   async redirects() {
