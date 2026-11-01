@@ -6,7 +6,13 @@ import { useState } from "react";
 import { Markdown } from "@/components/markdown";
 import { Badge } from "@/components/ui/badge";
 import { HIT_THRESHOLD } from "@/lib/evals/metrics";
-import { describeConfig, type EvalItem, type EvalRunRow, type ItemResult } from "@/lib/evals/types";
+import {
+  describeConfig,
+  type EvalItem,
+  type EvalRunRow,
+  type ItemResult,
+  type JudgeCall,
+} from "@/lib/evals/types";
 import { formatMs } from "@/lib/format";
 
 import { fixed2, outOf5, pct, RankBadge } from "./shared";
@@ -30,11 +36,7 @@ export function RunDetail({ run, items }: { run: EvalRunRow; items: EvalItem[] }
         </p>
       </div>
       {run.error && <p className="text-destructive text-sm">{run.error}</p>}
-      {judgeErrors.map((c, i) => (
-        <p key={i} className="text-destructive text-sm">
-          Judge call for {c.itemIds.length} answers: {c.error}
-        </p>
-      ))}
+      {judgeErrors.length > 0 && <JudgeErrors calls={judgeErrors} />}
 
       <ol className="flex flex-col divide-y rounded-lg border">
         {run.config.itemIds.map((itemId, n) => {
@@ -182,5 +184,32 @@ function CoverageBar({ value }: { value: number }) {
         style={{ width: `${value * 100}%` }}
       />
     </span>
+  );
+}
+
+/**
+ * Failed judge calls, folded into one line: a daily-quota 429 repeats the same
+ * 600-character message for every batch, and the run's resume button
+ * (Complete (n)) is what fixes it. The full messages stay one click away.
+ */
+function JudgeErrors({ calls }: { calls: JudgeCall[] }) {
+  const unjudged = calls.reduce((s, c) => s + c.itemIds.length, 0);
+  // The provider's first sentence, e.g. "HTTP 429: You exceeded your current quota…".
+  const first = calls[0].error!.split(/(?<=\.)\s/)[0];
+  return (
+    <details className="text-destructive text-sm">
+      <summary className="cursor-pointer">
+        {calls.length} judge {calls.length === 1 ? "call" : "calls"} failed, so {unjudged} answers
+        have no verdict: {first} Use <span className="font-medium">Complete</span> on the run to
+        judge them later.
+      </summary>
+      <ul className="mt-1 flex flex-col gap-1 text-xs">
+        {calls.map((c, i) => (
+          <li key={i}>
+            {c.itemIds.length} answers: {c.error}
+          </li>
+        ))}
+      </ul>
+    </details>
   );
 }
