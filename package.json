@@ -17,6 +17,8 @@
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
+    "@ai-sdk/google": "4.0.109",
+    "@ai-sdk/groq": "4.0.74",
     "@base-ui/react": "^1.9.0",
     "@huggingface/transformers": "4.3.2",
     "@mdx-js/loader": "^3.1.1",
@@ -25,6 +27,7 @@
     "@next/mdx": "^16.4.3",
     "@types/mdx": "^2.0.14",
     "@upstash/redis": "^1.40.0",
+    "ai": "7.0.159",
     "class-variance-authority": "^0.7.1",
     "cn": "^0.5.1",
     "drizzle-orm": "^0.45.4",
@@ -61,6 +64,6 @@
   },
   "packageManager": "pnpm@12.16.1",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   }
 }
