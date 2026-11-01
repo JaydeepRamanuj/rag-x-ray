@@ -1,0 +1,58 @@
+# Lesson 0: Start here
+
+This lesson assumes you've never built anything with AI search. It explains the one idea the whole app is about, then walks you through the pages in the order a question actually flows through them. Every page also has a **How to use this page** button at the top right, with a step-by-step experiment and what you should see. Any word with a <Term id="rag">dotted underline</Term> can be hovered (or tapped) for a plain definition, and the [glossary](/learn/glossary) has them all in one place.
+
+## The problem
+
+A chat model like Gemini (an <Term id="llm" />) has read a huge amount of public text, so it writes fluently about almost anything. But it has never read **your** documents: your notes, your company's wiki, last week's meeting minutes. Ask about them and it either says it doesn't know, or worse, writes a confident, plausible, wrong answer. That's called a <Term id="hallucination" />.
+
+You could paste a whole document into every question. That works for one short file, but it's slow and expensive (you pay for every word sent, every time), and it stops working when you have more documents than fit.
+
+## The idea: an open-book exam
+
+**<Term id="rag">Retrieval-augmented generation</Term>** treats the model like a student in an open-book exam. Before each question, you find the few pages of the book most likely to hold the answer, and hand the student only those pages, with the instruction "answer from these, and say which page you used".
+
+That splits the work into two jobs:
+
+```text
+Once per document ("ingestion")
+  upload → pull out the text → cut into chunks → turn each chunk into numbers → store
+
+Every question
+  question → turn into numbers → find the closest chunks → put them in the prompt → model writes the answer
+```
+
+- **Chunks.** Documents are cut into passages of a few hundred words, so you can hand over just the relevant part. Where you cut matters: cut a definition in half and neither half may be found.
+- **Embeddings.** A model turns each chunk into a list of numbers (an <Term id="embedding" />) where similar meanings get similar numbers. "Cancel my order" and "I want a refund" end up close together even though they share no words.
+- **Search.** Your question is turned into numbers the same way, and the chunks with the closest numbers are fetched. That's <Term id="vector-search" />. Searching for the exact words too (<Term id="keyword-search" />) catches names and codes that the numbers blur.
+- **The prompt.** The best few chunks are pasted, numbered, into the message sent to the model, with rules: use only these, cite them as [1], [2], and say so if the answer isn't there.
+- **The answer** streams back word by word, with citations you can check.
+
+## What every number means
+
+The app shows a lot of numbers. Three units cover nearly all of them:
+
+- **ms** is milliseconds: 1,000 ms is one second. Search takes a few hundred ms; the model's first word often takes one to three seconds.
+- **<Term id="token">Tokens</Term>** are the pieces of text models count in, roughly ¾ of a word each. You're billed per token: what you send (input) and what comes back (output).
+- **$** is what something would cost on a paid plan. This app runs on free tiers, so your real cost is always $0; the dollar figures show what it would cost in production.
+
+## The tour
+
+Follow the pages in this order. Each stop takes five to ten minutes with its **How to use this page** guide open, and each guide ends with a link to the next stop.
+
+1. **[Chat](/chat): the whole thing working.** Ask "What does hnsw.ef_search control in pgvector, and what is its default?" You get a two-sentence answer with a [1] citation and five sources underneath, one of them cited. Then turn **Use documents** off and ask again, to see the same model answering from memory with nothing to check it against.
+2. **[Documents](/documents): where the sources come from.** Seven files are already in the library. Upload a small file of your own, watch it get cut and embedded, then ask chat about it.
+3. **[Chunking lab](/lab/chunking): how documents are cut.** The same document cut four ways. Look for the red ✂ marks where the simplest method slices sentences in half.
+4. **[Embedding explorer](/lab/embeddings): what "similar numbers" looks like.** Every chunk as a dot on a map, your question as a star. The similarity playground shows what embeddings miss: "safe" and "not safe" score almost the same.
+5. **[Retrieval arena](/lab/retrieval): four ways to search.** One question, four columns: by meaning, by words, both, and both re-sorted by a smarter model (<Term id="rerank">reranking</Term>). Search for `umap-js` and watch the meaning-based search miss all three chunks that mention it.
+6. **[Prompt inspector](/runs/0f59bf82-0072-4b8a-82e3-446c8f1d02aa/prompt): what the model is actually sent.** The sources take 95% of the prompt; your question is 1%. Switch off a source and ask again.
+7. **[Streaming debugger](/runs/0f59bf82-0072-4b8a-82e3-446c8f1d02aa/stream): how the answer arrives.** Replay an answer and watch it arrive piece by piece. Almost all the wait is before the first word (<Term id="ttft" />).
+8. **[Token ledger](/ledger): what it all costs.** Every question's tokens and price. Re-price one with 10 sources instead of 5 and the cost nearly doubles.
+9. **[Evals](/evals): is it getting better?** 25 questions with known answers, scored automatically. Plain vector search finds the answer for 88% of them; hybrid search plus reranking finds all 25.
+10. **[Library comparison](/lab/sdk): the same chat with less code.** This app's hand-written version next to one built with a popular library: 709 lines against 208, and what the library hides.
+
+## Where to go next
+
+Once you've done the tour, the lessons go deeper, one concept each, in the same order: [tokens](/learn/tokens), [embeddings](/learn/embeddings), [chunking](/learn/chunking), [vector databases](/learn/vector-databases), [hybrid retrieval](/learn/hybrid-retrieval), [reranking](/learn/reranking), [prompt construction](/learn/prompt-construction), [evaluating RAG](/learn/evaluating-rag) and [caching and cost](/learn/caching-and-cost). [Lesson 13](/learn/full-pipeline) follows one question through every stage with real timings, and is a good place to check how much has clicked.
+
+If something on a page looks broken, check the guide's **Things that look wrong but aren't** section first. Rate limits, cached results and the model's natural variation explain most surprises.

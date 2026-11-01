@@ -1,4 +1,5 @@
 import {
+  BookA,
   BookOpen,
   Coins,
   FileText,
@@ -8,6 +9,7 @@ import {
   Orbit,
   Scissors,
   Search,
+  Signpost,
   type LucideIcon,
 } from "lucide-react";
 
@@ -88,10 +90,22 @@ export const navGroups: { label: string; items: NavItem[] }[] = [
     label: "Learn",
     items: [
       {
+        href: "/learn/start-here",
+        title: "Start here",
+        icon: Signpost,
+        description: "RAG in plain words, and a guided tour of every page.",
+      },
+      {
         href: "/learn",
         title: "Lessons",
         icon: BookOpen,
         description: "One lesson per concept, linked back into the app.",
+      },
+      {
+        href: "/learn/glossary",
+        title: "Glossary",
+        icon: BookA,
+        description: "Every term in plain words.",
       },
     ],
   },

@@ -11,6 +11,14 @@ export type Lesson = {
 
 export const lessons: Lesson[] = [
   {
+    slug: "start-here",
+    number: 0,
+    title: "Start here",
+    summary: "RAG in plain words, and a guided tour of the app in the order a question flows.",
+    phase: 6,
+    written: true,
+  },
+  {
     slug: "llm-api-call",
     number: 1,
     title: "How an LLM API call works",
