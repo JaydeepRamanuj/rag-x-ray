@@ -2,7 +2,7 @@
 
 A chat-over-your-documents app where every stage of retrieval-augmented generation is visible, adjustable and measured. Change one setting (chunk size, embedding model, retrieval method, reranking, prompt, model) and watch what it does to the chunks, the ranking, the prompt, the tokens, the latency and the eval scores.
 
-The chat is the shell. The labs around it are the product, and the [Learn](content/learn) pages explain each stage with real numbers from this app.
+The chat is the shell. The labs around it are the product, and the [Learn](content/learn) pages explain each stage with real numbers from this app. New to RAG? Start with [Lesson 0](content/learn/start-here.mdx), and open **How to use this page** on any page for a guided experiment.
 
 - **Hand-rolled first.** Every LLM, embedding, rerank and streaming call is plain `fetch`, with a hand-written SSE parser. The same chat is then rewritten on the Vercel AI SDK so you can compare the two.
 - **Every number is shown.** Tokens, scores, latency and paid-tier cost appear next to whatever produced them.
@@ -24,7 +24,7 @@ The chat is the shell. The labs around it are the product, and the [Learn](conte
 | **Streaming debugger** `/runs/[id]/stream` | Every network read, SSE event and raw provider frame on a timeline: time to first token, tokens per second, back-pressure.                                                          |
 | **Token ledger** `/ledger`                 | Every run's tokens, latency and paid-tier cost, daily usage against the free quotas, and a what-if re-pricing panel.                                                                |
 | **Evals** `/evals`                         | A 25-question eval set: hit rate and MRR without an LLM, faithfulness and relevance with an LLM judge, and a compare view.                                                          |
-| **Learn** `/learn`                         | Fourteen lessons, one per concept, each with "try it" links into the app and the numbers you should see.                                                                            |
+| **Learn** `/learn`                         | A Start here tour, fourteen lessons with "try it" links and the numbers you should see, and a plain-words glossary. Every page also has a **How to use this page** guide.           |
 
 <details>
 <summary>More screenshots</summary>
@@ -136,4 +136,4 @@ The local embedding model (~90 MB) downloads from Hugging Face on first use into
 
 ## Lessons
 
-1. How an LLM API call works · 2. Tokens and tokenisers · 3. Streaming · 4. Embeddings · 5. Chunking · 6. Vector databases · 7. Keyword search and hybrid retrieval · 8. Reranking · 9. Prompt construction · 10. Evaluating RAG · 11. Caching and cost control · 12. Libraries vs hand-rolled · 13. The full pipeline · 14. [Process log](content/learn/process-log.mdx): what was decided, what broke, and why
+0. [Start here](content/learn/start-here.mdx): RAG in plain words and a tour of the app · 1. How an LLM API call works · 2. Tokens and tokenisers · 3. Streaming · 4. Embeddings · 5. Chunking · 6. Vector databases · 7. Keyword search and hybrid retrieval · 8. Reranking · 9. Prompt construction · 10. Evaluating RAG · 11. Caching and cost control · 12. Libraries vs hand-rolled · 13. The full pipeline · 14. [Process log](content/learn/process-log.mdx): what was decided, what broke, and why
