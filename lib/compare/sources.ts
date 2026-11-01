@@ -54,7 +54,9 @@ function countCode(text: string): number {
 async function load(label: string, list: [string, string][]): Promise<SourceSide> {
   const files = await Promise.all(
     list.map(async ([p, role]) => {
-      const text = await readFile(path.join(process.cwd(), p), "utf8");
+      // Only these listed files are needed, and next.config.ts traces them
+      // explicitly; without the ignore, Turbopack would ship the whole repo.
+      const text = await readFile(path.join(/* turbopackIgnore: true */ process.cwd(), p), "utf8");
       return { path: p, role, text, lines: text.split("\n").length, codeLines: countCode(text) };
     }),
   );
