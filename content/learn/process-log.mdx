@@ -159,3 +159,35 @@ Open [`/api/health`](/api/health) twice, a few seconds apart, after the app has 
 - **Full baseline (vector):** faithfulness 5.0/5 and relevance 4.88/5 over 25 answers, 105,186 tokens, $0.064 at list price. The one low relevance score was the question whose passage vector search missed: the model said the sources didn't cover it, which is the right behaviour and still a failed answer.
 - **Full hybrid + rerank:** hit rate 100% and MRR 0.98; three questions fixed and two ranked higher than the baseline, none worse. Only 5 of its 25 answers were judged before the quota ran out (5.0/5 on both scores).
 - **The judge never gave less than 5 for faithfulness.** That's a lenient judge or a well-grounded prompt, and the eval can't tell which; relevance and the retrieval metrics are what moved.
+
+## Phase 6: Embedding explorer, library comparison, polish (1 Nov 2026)
+
+**What was built:** the [embedding explorer](/lab/embeddings), which maps every active chunk to 2D with UMAP or PCA in the browser, drops a query on the map as a star linked to its 5 true nearest chunks, and checks how many of those the map keeps close. It switches between Gemini at 768 or 256 dims and the local model, and has a similarity playground underneath. `/api/chat-sdk` is the same RAG chat on the Vercel AI SDK, and the [library comparison](/lab/sdk) page shows both implementations' source side by side and races them. Also: lessons [12](/learn/libraries-vs-hand-rolled) and [13](/learn/full-pipeline), an explorer section in [Lesson 4](/learn/embeddings), and a README with an architecture diagram and screenshots. Every lesson is now written.
+
+### Decisions
+
+- **256 dims are truncated in the browser, not stored.** Gemini's vectors are Matryoshka-trained, so the first 256 of the stored 768 are a 256-dim embedding once renormalised (their length is about 0.65). No new column, no re-embedding, and the explorer can compare both sizes on the same vectors.
+- **Neighbours are computed in full dimensions; the map is only a picture.** The side panel counts how many of the true top 5 are also the 5 closest dots, so the distortion is measured rather than hidden.
+- **UMAP is refitted with the query as one more point.** umap-js has `transform()`, which places a new point without moving the others, but on four test questions it put the query near 0, 0, 3 and 3 of its 5 true neighbours; refitting got 2, 2, 5 and 5. A refit costs about 300 ms, and the layout shifts slightly per query. PCA's axes come from the chunks alone, and the query is projected exactly.
+- **PCA is hand-written** (power iteration, about 60 lines, unit-tested) rather than a library, so the maths stays visible like everything else here.
+- **`/api/embeddings` is public, like chat.** It returns stored vectors (~610 KB for 64 Gemini vectors as JSON) and embeds at most two 500-character texts per call, cached in Upstash.
+- **The SDK route shares retrieval and the prompt builder**, so the comparison isolates the model call and the stream. It saves runs with `config.engine = "ai-sdk"` and `source: "sdk"`, sends the run id and sources as custom `data-*` parts, and puts the totals in the `finish` part's message metadata.
+- **The comparison page reads its source files from disk** in a `'use cache'` function with `cacheLife("max")`, so it's prerendered at build time. The files are also listed in `outputFileTracingIncludes` in case it revalidates on the server.
+- **Screenshots come from a production build**, captured with headless Chrome over the DevTools protocol so pages that need a click (arena search, race, replay) can be shot with real timings.
+
+### What broke
+
+- **AI SDK v7 renamed half of what the docs online still show.** `system` became `instructions`, `fullStream` became `stream`, `onFinish` became `onEnd`, `createGoogleGenerativeAI` became `createGoogle`, and usage details moved to `inputTokenDetails` and `outputTokenDetails`. It also needs Node 22, so `engines.node` went up from 20.
+- **A union of provider options didn't type-check.** `{ google: … } | { groq: … }` fails the SDK's `ProviderOptions` index signature, because the missing key is `undefined`. The helper now declares its return type as `streamText`'s own parameter type.
+- **Headless Chrome's `--virtual-time-budget` froze `performance.now()`**, so the first explorer screenshot claimed UMAP took "0 ms", and dev mode added the Next badge. Driving Chrome over CDP with real waits against `next start` fixed both.
+- **The production server refused rerank**, because `APP_PASSWORD` isn't set locally. Correct, but the error says "uploads are disabled" for a search. The arena screenshot came from the dev server instead.
+- **A hidden browser pane again left a page on "Loading vectors…"**: background tabs throttle timers, and the explorer schedules UMAP with `setTimeout`.
+
+### What to notice
+
+- **The map loses most of the space.** PCA's two axes keep 24.6% of the variance of 64 Gemini vectors. For "What does a cross-encoder reranker add?", UMAP keeps 3 of the 5 true neighbours closest to the star, PCA 2, and PCA at 256 dims 0.
+- **Truncation is cheap in quality.** At 256 dims, 88.8% of each chunk's top-5 neighbours are the same as at 768; for that query the best chunk stays first and two of five change.
+- **Each model has its own floor.** Gemini scores two unrelated sentences 0.708, MiniLM 0.013. MiniLM rates "safe" and "not safe for children" 0.936, above two synonyms (0.836), and a Spanish translation 0.164, where Gemini gives 0.963.
+- **The SDK route is 208 lines against 709 across eight hand-rolled files**, both counting code only. Both send the same 1,961 input tokens for the same question; their time to first token swapped places between two races (4.06 vs 4.53 s, then 5.12 vs 1.55 s), which is Gemini's variance, not the library's.
+- **What the SDK hides:** usage arrives only with the finish part, so a stopped stream records none; its two retries are silent; rate-limit headers are only available after the stream; errors become "An error occurred." unless you supply `onError`; and Gemini's opaque `thoughtSignature` rides along to the browser.
+- **Retrieval dominates latency.** One hybrid + rerank question: embed 869 ms, search 557 ms, rerank 975 ms, then 766 ms to Gemini's first token and 285 ms for 105 tokens, 3.5 s in all. With the embedding and rerank cached: 1.5 s.
