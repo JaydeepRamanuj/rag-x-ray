@@ -14,6 +14,7 @@ import type { ChatEvent } from "@/lib/chat/events";
 import { allChatModels } from "@/lib/config";
 import { formatInt, formatMs, formatUsd } from "@/lib/format";
 import type { ChatMessage, Usage } from "@/lib/llm/types";
+import { Term } from "@/components/term";
 
 export type SavedRun = {
   id: string;
@@ -202,8 +203,8 @@ export function StreamDebugger({ run }: { run: SavedRun }) {
       <header className="flex flex-col gap-2">
         <h1 className="text-xl font-semibold">Streaming debugger</h1>
         <p className="text-muted-foreground text-sm">
-          Replay this run&apos;s exact prompt and watch the wire: every network read, every SSE
-          event, and the raw frames from the provider underneath.
+          Replay this run&apos;s exact prompt and watch the wire: every network read, every{" "}
+          <Term id="sse" /> event, and the raw frames from the provider underneath.
         </p>
         <div className="bg-muted/40 flex flex-col gap-1 rounded-lg border p-3 text-sm">
           <div className="line-clamp-3 font-medium" title={run.question}>

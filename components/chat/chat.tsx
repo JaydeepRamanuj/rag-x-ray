@@ -19,6 +19,7 @@ import { formatInt, formatMs, formatUsd } from "@/lib/format";
 import type { ChatMessage, Usage } from "@/lib/llm/types";
 import { citedNumbers } from "@/lib/prompt/builder";
 import { METHODS, type Method } from "@/lib/retrieval/methods";
+import { Term } from "@/components/term";
 
 const SYSTEM_PROMPT = "You are a helpful assistant. Answer concisely.";
 
@@ -211,8 +212,16 @@ export function Chat() {
             <div className="text-muted-foreground py-24 text-center text-sm">
               <p className="text-foreground text-base font-medium">Ask about your documents.</p>
               <p className="mt-1">
-                With &quot;Use documents&quot; on, the closest chunks are retrieved and the answer
-                cites them. Turn it off to talk to the model directly.
+                With &quot;Use documents&quot; on, the closest <Term id="chunk">chunks</Term> are
+                retrieved and the answer <Term id="citation">cites</Term> them. Turn it off to talk
+                to the model directly.
+              </p>
+              <p className="mt-4">
+                New to RAG?{" "}
+                <Link href="/learn/start-here" className="text-foreground underline">
+                  Start here
+                </Link>
+                , or press <span className="text-foreground">How to use this page</span> at the top.
               </p>
             </div>
           )}

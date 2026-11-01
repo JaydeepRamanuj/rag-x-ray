@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 
 import { ChunkingLab } from "@/components/chunking-lab/chunking-lab";
+import { Term } from "@/components/term";
 
 export default function ChunkingLabPage({ searchParams }: PageProps<"/lab/chunking">) {
   return (
@@ -9,9 +10,10 @@ export default function ChunkingLabPage({ searchParams }: PageProps<"/lab/chunki
       <header className="flex flex-col gap-2">
         <h1 className="text-xl font-semibold">Chunking lab</h1>
         <p className="text-muted-foreground text-sm">
-          One document split four ways with the same settings. Each chunk is tinted, overlaps are
-          darker, and ✂ marks a cut through a word. Previews are computed in memory; nothing is
-          stored until you save a set. See{" "}
+          One document split into <Term id="chunk">chunks</Term> four ways with the same settings.
+          Each chunk is tinted, <Term id="overlap">overlaps</Term> are darker, and ✂ marks a cut
+          through a word. Previews are computed in memory; nothing is stored until you save a set.
+          See{" "}
           <Link href="/learn/chunking" className="underline">
             Lesson 5
           </Link>

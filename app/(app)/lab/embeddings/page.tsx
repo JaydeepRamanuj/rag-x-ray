@@ -2,6 +2,7 @@ import { Suspense } from "react";
 
 import { EmbeddingExplorer } from "@/components/embedding-explorer/embedding-explorer";
 import { SimilarityPlayground } from "@/components/embedding-explorer/similarity-playground";
+import { Term } from "@/components/term";
 
 export default function EmbeddingExplorerPage({ searchParams }: PageProps<"/lab/embeddings">) {
   return (
@@ -9,9 +10,10 @@ export default function EmbeddingExplorerPage({ searchParams }: PageProps<"/lab/
       <header className="flex flex-col gap-2">
         <h1 className="text-xl font-semibold">Embedding explorer</h1>
         <p className="text-muted-foreground text-sm">
-          Every active chunk as a dot, its 768 (or 384) numbers squashed into two so you can see
-          them. Colour is the document. Place a query to see where retrieval would look, then check
-          whether the map agrees with the real nearest neighbours.
+          Every active chunk as a dot, its 768 (or 384) <Term id="embedding">numbers</Term> squashed
+          into two so you can see them. Colour is the document. Place a query to see where retrieval
+          would look, then check whether the <Term id="projection">map</Term> agrees with the real
+          nearest neighbours.
         </p>
       </header>
       {/* The query string pre-loads settings from a lesson's "Try it" link. */}

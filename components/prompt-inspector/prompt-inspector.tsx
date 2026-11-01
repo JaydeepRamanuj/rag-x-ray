@@ -20,6 +20,7 @@ import { rebuildMessages, type PromptPart, type SplitPrompt } from "@/lib/prompt
 import { cn } from "@/lib/utils";
 
 import { kindStyle, TokenBudget } from "./token-budget";
+import { Term } from "@/components/term";
 
 type Props = {
   run: RunSummary;
@@ -150,8 +151,9 @@ export function PromptInspector({ run, split, parts, removed, reruns }: Props) {
       <header className="flex flex-col gap-2">
         <h1 className="text-xl font-semibold">Prompt inspector</h1>
         <p className="text-muted-foreground text-sm">
-          The exact messages this run sent, part by part, with what each part cost in tokens. Edit
-          the rules or drop a source, then re-run to compare the answers.
+          The exact messages this <Term id="run" /> sent, part by part, with what each part cost in{" "}
+          <Term id="token">tokens</Term>. Edit the rules (<Term id="system-prompt" />) or drop a
+          source, then re-run to compare the answers.
         </p>
         <div className="bg-muted/40 flex flex-col gap-1 rounded-lg border p-3 text-sm">
           <div className="line-clamp-3 font-medium" title={run.question}>

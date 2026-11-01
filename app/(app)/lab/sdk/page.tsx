@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { SdkCompare } from "@/components/sdk-compare/sdk-compare";
 import { loadComparison } from "@/lib/compare/sources";
+import { Term } from "@/components/term";
 
 export default async function LibraryComparisonPage() {
   const sides = await loadComparison();
@@ -11,9 +12,9 @@ export default async function LibraryComparisonPage() {
         <h1 className="text-xl font-semibold">Library comparison</h1>
         <p className="text-muted-foreground text-sm">
           Chat over your documents, written twice. The left side is what this app built by hand in
-          phases 1 to 3: provider adapters, retries, an SSE encoder and parser. The right side is
-          the same route on the Vercel AI SDK. Retrieval and the prompt builder are shared, so only
-          the model call and the stream differ.{" "}
+          phases 1 to 3: provider adapters, retries, an <Term id="sse" /> encoder and parser. The
+          right side is the same route on the Vercel AI <Term id="sdk" />. Retrieval and the prompt
+          builder are shared, so only the model call and the stream differ.{" "}
           <Link href="/learn/libraries-vs-hand-rolled" className="underline">
             Lesson 12
           </Link>{" "}

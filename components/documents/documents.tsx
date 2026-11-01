@@ -12,6 +12,7 @@ import { loadPassword, savePassword } from "@/lib/client/password";
 import { formatInt, formatMs } from "@/lib/format";
 import type { IngestEvent } from "@/lib/ingest/events";
 import { readSse } from "@/lib/sse/parser";
+import { Term } from "@/components/term";
 
 type Doc = {
   id: string;
@@ -130,8 +131,10 @@ export function Documents() {
         <h1 className="text-xl font-semibold">Documents</h1>
         <p className="text-muted-foreground mt-1 text-sm">
           Upload text, Markdown or PDF. Each file is extracted, split into ~{defaults.chunkSize}
-          -token chunks with {defaults.chunkOverlap} tokens of overlap, embedded with Gemini, and
-          stored in pgvector. Embeddings are cached by text hash, so re-uploading costs nothing.
+          -token <Term id="chunk">chunks</Term> with {defaults.chunkOverlap} tokens of{" "}
+          <Term id="overlap" />, <Term id="embedding">embedded</Term> with Gemini, and stored in{" "}
+          <Term id="pgvector" />. Embeddings are <Term id="cache">cached</Term> by text hash, so
+          re-uploading costs nothing.
         </p>
       </header>
 

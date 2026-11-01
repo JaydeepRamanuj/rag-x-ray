@@ -5,6 +5,7 @@ import { dailyUsage, listRuns, QUOTA_TIME_ZONE } from "@/lib/db/ledger";
 import { summarizeRun } from "@/lib/db/runs";
 import { lastDays } from "@/lib/ledger/days";
 import { runForWhatIf } from "@/lib/ledger/inputs";
+import { Term } from "@/components/term";
 
 const DAYS = 14;
 const MAX_RUNS = 200;
@@ -15,8 +16,9 @@ export default function LedgerPage({ searchParams }: PageProps<"/ledger">) {
       <header className="flex flex-col gap-2">
         <h1 className="text-xl font-semibold">Token ledger</h1>
         <p className="text-muted-foreground text-sm">
-          Every run&apos;s tokens, latency and what it would cost on the paid tier, plus daily usage
-          against your free quota. Your real cost is $0.
+          Every <Term id="run">run</Term>&apos;s <Term id="token">tokens</Term>,{" "}
+          <Term id="latency" /> and what it would cost on the paid tier, plus daily usage against
+          your <Term id="free-tier">free quota</Term>. Your real cost is $0.
         </p>
       </header>
       {/* Runs come from the database at request time, behind a static shell. */}

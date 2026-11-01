@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 
 import { RetrievalArena } from "@/components/retrieval-arena/retrieval-arena";
+import { Term } from "@/components/term";
 
 export default function RetrievalArenaPage({ searchParams }: PageProps<"/lab/retrieval">) {
   return (
@@ -8,9 +9,11 @@ export default function RetrievalArenaPage({ searchParams }: PageProps<"/lab/ret
       <header className="flex flex-col gap-2">
         <h1 className="text-xl font-semibold">Retrieval arena</h1>
         <p className="text-muted-foreground text-sm">
-          One query, four ways: nearest vectors, keyword full-text search, both fused with
-          Reciprocal Rank Fusion, and the fused list reordered by a cross-encoder. Each column shows
-          its own score and how far it moved each chunk.
+          One query, four ways: nearest vectors (<Term id="vector-search" />
+          ), <Term id="keyword-search">keyword</Term> full-text search, both fused with{" "}
+          <Term id="rrf">Reciprocal Rank Fusion</Term>, and the fused list reordered by a{" "}
+          <Term id="cross-encoder" />. Each column shows its own score and how far it moved each
+          chunk.
         </p>
       </header>
       {/* The query string pre-loads a query from a lesson's "Try it" link. */}
