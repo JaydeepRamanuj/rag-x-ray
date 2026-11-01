@@ -154,7 +154,9 @@ export function PromptInspector({ run, split, parts, removed, reruns }: Props) {
           the rules or drop a source, then re-run to compare the answers.
         </p>
         <div className="bg-muted/40 flex flex-col gap-1 rounded-lg border p-3 text-sm">
-          <div className="font-medium">{split.rag?.question ?? run.question}</div>
+          <div className="line-clamp-3 font-medium" title={run.question}>
+            {split.rag?.question ?? run.question}
+          </div>
           <div className="text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-xs">
             <span>{label(run.model)}</span>
             <Badge variant={run.status === "ok" ? "secondary" : "outline"}>{run.status}</Badge>

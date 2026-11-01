@@ -72,7 +72,9 @@ export function WhatIf({ row }: { row: LedgerRow }) {
   return (
     <div className="flex flex-col gap-4">
       <div className="text-sm">
-        <span className="font-medium">{row.question}</span>{" "}
+        <span className="line-clamp-2 font-medium" title={row.question}>
+          {row.question}
+        </span>{" "}
         <Link
           href={`/runs/${row.id}/prompt`}
           className="text-muted-foreground text-xs underline underline-offset-2"

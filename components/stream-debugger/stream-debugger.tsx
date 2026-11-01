@@ -161,7 +161,9 @@ export function StreamDebugger({ run }: { run: SavedRun }) {
 
     try {
       await streamChat(
-        { model, messages: run.messages, debug: true, source: "debugger" },
+        // Without `question`, the route would save the whole built prompt as
+        // the question, and the ledger and inspector would show 7,000 chars.
+        { model, messages: run.messages, question: run.question, debug: true, source: "debugger" },
         {
           signal: controller.signal,
           slowReadMs: slow ? SLOW_READ_MS : 0,
@@ -204,7 +206,9 @@ export function StreamDebugger({ run }: { run: SavedRun }) {
           event, and the raw frames from the provider underneath.
         </p>
         <div className="bg-muted/40 flex flex-col gap-1 rounded-lg border p-3 text-sm">
-          <div className="font-medium">{run.question}</div>
+          <div className="line-clamp-3 font-medium" title={run.question}>
+            {run.question}
+          </div>
           <div className="text-muted-foreground flex flex-wrap gap-x-4 font-mono text-xs">
             <span>saved run</span>
             <span>{label(run.model)}</span>
