@@ -1,4 +1,7 @@
+import { Suspense } from "react";
+
 import { AppSidebar } from "@/components/app-sidebar";
+import { GuideButton, GuidePanel } from "@/components/guide/guide-panel";
 import { Separator } from "@/components/ui/separator";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 
@@ -13,8 +16,20 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <SidebarTrigger className="-ml-1" />
           <Separator orientation="vertical" className="h-4" />
           <span className="text-muted-foreground text-sm">RAG X-Ray</span>
+          {/* Which guide to show depends on the path, only known at request
+              time on dynamic routes, so it streams in like the sidebar's
+              active state. */}
+          <Suspense>
+            <GuideButton />
+          </Suspense>
         </header>
-        <div className="flex flex-1 flex-col">{children}</div>
+        {/* The guide sits beside the page, not over it, on wide screens. */}
+        <div className="flex flex-1">
+          <div className="flex min-w-0 flex-1 flex-col">{children}</div>
+          <Suspense>
+            <GuidePanel />
+          </Suspense>
+        </div>
       </SidebarInset>
     </SidebarProvider>
   );
