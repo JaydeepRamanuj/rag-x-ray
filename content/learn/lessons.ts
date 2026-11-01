@@ -104,7 +104,7 @@ export const lessons: Lesson[] = [
     title: "Libraries vs hand-rolled",
     summary: "What the Vercel AI SDK does for you.",
     phase: 6,
-    written: false,
+    written: true,
   },
   {
     slug: "full-pipeline",
@@ -112,7 +112,7 @@ export const lessons: Lesson[] = [
     title: "The full pipeline",
     summary: "One request traced end to end, with real timings.",
     phase: 6,
-    written: false,
+    written: true,
   },
   {
     slug: "process-log",

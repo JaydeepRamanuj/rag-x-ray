@@ -34,18 +34,52 @@ cos(a, b) = (a · b) / (‖a‖ × ‖b‖)
 - [`lib/embeddings/index.ts`](https://github.com/JaydeepRamanuj/rag-x-ray/blob/main/lib/embeddings/index.ts): the cache in front of the API, batching by count and tokens, and a per-minute token budget.
 - [`lib/cache.ts`](https://github.com/JaydeepRamanuj/rag-x-ray/blob/main/lib/cache.ts): vectors are stored as base64 Float32 bytes, 3 KB each instead of ~8 KB as JSON.
 
+**Seeing them.** 768 numbers can't be drawn, so the [embedding explorer](/lab/embeddings) squashes every chunk's vector into two. **PCA** finds the two directions in which the vectors spread out most and projects onto them: honest along those axes, blind to everything else. On our 64 chunks, those two axes hold only **24.6%** of the variance, so three quarters of what separates the chunks is invisible. **UMAP** instead tries to keep each point next to its nearest neighbours, so clusters read well, but distances between clusters and cluster sizes mean little. Either way, a 2D map is a sketch. Neighbour search always happens in full dimensions.
+
+**Shorter vectors (Matryoshka).** The first 256 of the stored 768 numbers are a usable 256-dim embedding: the model was trained so that every prefix works. That prefix has a length of about **0.65**, so it is renormalised before use. On our chunks, each chunk's top 5 neighbours at 256 dims overlap **88.8%** with its top 5 at 768. That's a third of the storage, at the price of about one neighbour in nine changing.
+
 ## Try it
 
 Upload a document on [Documents](/documents), then upload the same file again. In [Chat](/chat), ask the same question twice and watch the **embed** time in the stats line.
+
+Then open the explorer with ["What does a cross-encoder reranker add?"](/lab/embeddings?q=What%20does%20a%20cross-encoder%20reranker%20add%3F) and switch **Projection** to PCA, **Dimensions** to 256, and **Embedding model** to local. In the [similarity playground](/lab/embeddings) under the map, press each preset, starting with **Unrelated**.
 
 ## What you should see
 
 The second upload reports every chunk "from cache" and 0 tokens embedded. The second time you ask a question, **embed** drops from about a second to under 200 ms and shows "(cached)". Open the sources under an answer: the scores sit close together, but the cited one usually ranks first.
 
+In the explorer, documents form clusters, and the query star lands among `retrieval-augmented-generation.md`'s chunks. The side panel checks the map against the truth: how many of the query's 5 nearest chunks by cosine are also the 5 closest dots.
+
+| Setting                 | Nearest chunk (cosine) | True top 5 that are also closest on the map |
+| ----------------------- | ---------------------- | ------------------------------------------- |
+| Gemini, 768 dims, UMAP  | RAG #7 (0.740)         | 3 of 5                                      |
+| Gemini, 768 dims, PCA   | RAG #7 (0.740)         | 2 of 5                                      |
+| Gemini, 256 dims, PCA   | RAG #7 (0.781)         | 0 of 5                                      |
+| Gemini, 256 dims, UMAP  | RAG #7 (0.781)         | 3 of 5                                      |
+| Local MiniLM, 384, UMAP | RAG #7 (0.604)         | 1 of 5                                      |
+
+At 256 dims the nearest chunk stays the same, but two `from-rules-to-transformers.md` chunks move into the top 5 and push two RAG chunks out. The local model finds the same best chunk but fills the rest of its top 5 with chunks from three other documents, at much lower scores (0.39–0.41).
+
+The playground shows what embeddings are bad at, and that every model has its own scale:
+
+| Pair                                                                        | Gemini 768 | Gemini 256 | MiniLM 384 |
+| --------------------------------------------------------------------------- | ---------- | ---------- | ---------- |
+| Synonyms: "The car is very fast." / "The automobile is extremely quick."    | 0.967      | 0.971      | 0.836      |
+| Negation: "…is safe for children." / "…is not safe for children."           | 0.879      | 0.907      | 0.936      |
+| Word order: "The dog bit the man." / "The man bit the dog."                 | 0.955      | 0.959      | 0.978      |
+| Spanish: "Where is the train station?" / "¿Dónde está la estación de tren?" | 0.963      | 0.968      | 0.164      |
+| Hindi: same question in Hindi                                               | 0.948      | 0.960      | 0.097      |
+| Same word, two meanings: bank (money) / bank (river)                        | 0.723      | 0.814      | 0.399      |
+| Unrelated: a fast car / photosynthesis                                      | 0.708      | 0.754      | 0.013      |
+
+Negation and word order barely move the score: in MiniLM, "safe" and "not safe" score 0.936, higher than the synonyms (0.836). Gemini handles Spanish and Hindi as the same question; MiniLM was trained on English and doesn't. And Gemini's floor is high: two unrelated sentences still score 0.708, so 0.72 for the two "banks" is barely above noise, while MiniLM's 0.399 is a clear signal on its own scale. Truncating to 256 dims raises every Gemini score a little, unrelated pairs most, so the scale compresses.
+
 ## Interview angle
 
 - **"Why not just use keyword search?"** Keywords miss synonyms and paraphrases. Embeddings capture meaning, but they miss exact identifiers like error codes, which is why Phase 4 combines both.
 - **"Cosine similarity vs dot product vs Euclidean distance?"** For unit-length vectors they all produce the same ranking. Cosine ignores length, so it's the safe default when you're not sure vectors are normalised.
+- **"Why might RAG return a passage that says the opposite?"** Embeddings encode topic more than logic: "safe" and "not safe" score 0.936 in MiniLM. A reranker, which reads question and passage together, or the LLM itself has to catch it.
+- **"Can you trust a UMAP plot of your embeddings?"** For local neighbourhoods, roughly; for distances between clusters, no. Check claims against neighbours computed in full dimensions, as the explorer does.
 - **"How would you reduce embedding costs?"** Cache by content hash, embed only changed chunks, batch requests, and use smaller dimensions where the quality loss is acceptable.
 
 ## Go deeper
@@ -53,3 +87,4 @@ The second upload reports every chunk "from cache" and 0 tokens embedded. The se
 - [Gemini: embeddings guide](https://ai.google.dev/gemini-api/docs/embeddings)
 - [Kusupati et al., Matryoshka representation learning (2022)](https://arxiv.org/abs/2205.13147)
 - [Reimers & Gurevych, Sentence-BERT (2019)](https://arxiv.org/abs/1908.10084)
+- [McInnes et al., UMAP (2018)](https://arxiv.org/abs/1802.03426) and [Understanding UMAP](https://pair-code.github.io/understanding-umap/)
