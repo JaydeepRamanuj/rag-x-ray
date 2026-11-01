@@ -1,4 +1,4 @@
-import { count, desc, eq, sum } from "drizzle-orm";
+import { and, count, desc, eq, sum } from "drizzle-orm";
 
 import { getDb } from "./client";
 import { chunks, chunkSets, documents } from "./schema";
@@ -14,20 +14,28 @@ export type DocumentRow = {
 };
 
 export async function listDocuments(): Promise<DocumentRow[]> {
-  return getDb()
-    .select({
-      id: documents.id,
-      title: documents.title,
-      sourceType: documents.sourceType,
-      tokenCount: documents.tokenCount,
-      pageCount: documents.pageCount,
-      chunkCount: count(chunks.id),
-      createdAt: documents.createdAt,
-    })
-    .from(documents)
-    .leftJoin(chunks, eq(chunks.documentId, documents.id))
-    .groupBy(documents.id)
-    .orderBy(desc(documents.createdAt));
+  return (
+    getDb()
+      .select({
+        id: documents.id,
+        title: documents.title,
+        sourceType: documents.sourceType,
+        tokenCount: documents.tokenCount,
+        pageCount: documents.pageCount,
+        chunkCount: count(chunks.id),
+        createdAt: documents.createdAt,
+      })
+      .from(documents)
+      // Only the active set: the chunking lab can save more sets of the same
+      // document, and counting those too made build-plan.md show 42, not 17.
+      .leftJoin(
+        chunkSets,
+        and(eq(chunkSets.documentId, documents.id), eq(chunkSets.isActive, true)),
+      )
+      .leftJoin(chunks, eq(chunks.chunkSetId, chunkSets.id))
+      .groupBy(documents.id)
+      .orderBy(desc(documents.createdAt))
+  );
 }
 
 export async function totalTokens(): Promise<number> {

@@ -109,7 +109,7 @@ export function Documents() {
   }
 
   async function remove(doc: Doc) {
-    if (!confirm(`Delete "${doc.title}" and its ${doc.chunkCount} chunks?`)) return;
+    if (!confirm(`Delete "${doc.title}" and all its chunks?`)) return;
     savePassword(password);
     const res = await fetch(`/api/documents/${doc.id}`, {
       method: "DELETE",
