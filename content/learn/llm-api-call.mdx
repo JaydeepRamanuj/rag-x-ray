@@ -1,0 +1,72 @@
+# Lesson 1: How an LLM API call works
+
+## The idea
+
+A chat model is a function with no memory. You send it a list of **messages**, each with a **role** (system, user, or assistant), plus a few **parameters**. It sends back the next assistant message and a **usage** report saying how many tokens it read and wrote. "Conversation" is an illusion the client creates by re-sending the whole history every time.
+
+```text
+request:  [system: "Be concise."] [user: "Hi"] [assistant: "Hello!"] [user: "Why is the sky blue?"]
+                                     ↓
+response: assistant: "Rayleigh scattering…"   usage: { in: 31, out: 12 }
+```
+
+## How it works
+
+**Roles.** The _system_ message sets behaviour for the whole conversation. _User_ and _assistant_ messages alternate. The model was trained on text formatted this way, so the roles are part of the prompt it actually sees, not metadata.
+
+**Parameters.** The main ones:
+
+- `temperature`: how random sampling is. 0 always picks the most likely next token; higher values spread the choice. RAG wants low values (we use 0.2) because answers should stick to the sources.
+- `max output tokens`: a hard cap on the answer. On reasoning models, the hidden "thinking" tokens count against it too.
+- `thinking level` / `reasoning effort`: every model in this app thinks before it answers. Thinking costs output tokens and time, so we set it as low as each model allows.
+
+**Two API dialects.** This app talks to two providers with plain `fetch` so the differences stay visible:
+
+|                | Gemini                                                   | Groq (OpenAI-style)             |
+| -------------- | -------------------------------------------------------- | ------------------------------- |
+| URL            | `…/models/{model}:streamGenerateContent?alt=sse`         | `…/openai/v1/chat/completions`  |
+| Auth           | `x-goog-api-key` header                                  | `Authorization: Bearer …`       |
+| System prompt  | separate `systemInstruction`                             | a message with `role: "system"` |
+| Assistant role | `"model"`                                                | `"assistant"`                   |
+| Message text   | `parts: [{ text }]` (a turn can mix text, images, audio) | `content: "…"`                  |
+| Thinking       | `thinkingConfig.thinkingLevel`                           | `reasoning_effort`              |
+| Usage          | `usageMetadata` on every chunk                           | `usage` in the last chunk only  |
+
+**The response body** carries the text plus usage. Gemini reports `promptTokenCount`, `candidatesTokenCount` (answer) and `thoughtsTokenCount` (thinking) separately. Groq folds reasoning into `completion_tokens` and breaks it out in `completion_tokens_details.reasoning_tokens`. The adapter normalises both so `outputTokens` is always what you'd be billed for.
+
+## In this app
+
+- [`lib/llm/types.ts`](https://github.com/JaydeepRamanuj/rag-x-ray/blob/main/lib/llm/types.ts): the provider-neutral `ChatMessage`, `Usage` and `LlmProvider` interface.
+- [`lib/llm/gemini.ts`](https://github.com/JaydeepRamanuj/rag-x-ray/blob/main/lib/llm/gemini.ts): `toGeminiBody()` maps our messages to Gemini's shape.
+
+```ts
+contents: turns.map((m) => ({
+  role: m.role === "assistant" ? "model" : "user",
+  parts: [{ text: m.content }],
+})),
+```
+
+- [`lib/llm/groq.ts`](https://github.com/JaydeepRamanuj/rag-x-ray/blob/main/lib/llm/groq.ts): messages pass straight through; that's the point of the OpenAI dialect.
+- [`lib/llm/retry.ts`](https://github.com/JaydeepRamanuj/rag-x-ray/blob/main/lib/llm/retry.ts): retries 429 and 5xx with backoff. Gemini sends a 503 "high demand" error when a model is busy, which happened while this lesson was being written.
+- [`lib/config.ts`](https://github.com/JaydeepRamanuj/rag-x-ray/blob/main/lib/config.ts): model IDs and each model's lowest thinking level. Gemini 3.8 Flash rejects `minimal` with a 400, so it uses `low`.
+
+## Try it
+
+Open [Chat](/chat) and ask "Why is the sky blue? One sentence." on Gemini 3.5 Flash-Lite, then ask a follow-up like "Say that again for a five-year-old."
+
+## What you should see
+
+The follow-up's **in** count is much higher than the first question's, even though you typed fewer words. The whole history was re-sent: the first question, the first answer, and the new question. Switch to GPT-OSS 20B and the stats line shows thinking tokens even at the lowest reasoning effort.
+
+## Interview angle
+
+- **"How does a chatbot remember the conversation?"** It doesn't. The client re-sends the history on every call, so cost and latency grow with conversation length. Long chats need truncation or summarisation.
+- **"What does temperature do, and what would you set for RAG?"** It scales the probability distribution before sampling. Low (0 to 0.3) for grounded answers, higher for creative writing.
+- **"Why put model IDs in config?"** Providers retire models on short notice. Groq shut down `llama-3.1-8b-instant` in August 2026, weeks before this app was built.
+
+## Go deeper
+
+- [Gemini: generateContent API reference](https://ai.google.dev/api/generate-content)
+- [Groq: chat completions API reference](https://console.groq.com/docs/api-reference#chat-create)
+- [Groq: reasoning models](https://console.groq.com/docs/reasoning)
+- [Gemini: thinking](https://ai.google.dev/gemini-api/docs/thinking)

@@ -1,0 +1,73 @@
+# Lesson 13: The full pipeline
+
+## The idea
+
+Every earlier lesson took one stage apart. This one follows a single question through all of them, with the time each stage took, measured on this app on 1 Nov 2026. The point isn't the exact numbers, which change with every request. It's where the time goes, and which parts a cache can remove.
+
+```text
+browser ──POST /api/chat──▶ route
+  1. embed the question            Gemini embeddings (Upstash cache in front)
+  2. search                        Neon: vector (pgvector) ∥ keyword (full-text), merged with RRF
+  3. rerank                        Cohere, top 20 → top 5 (Upstash cache in front)
+  4. build the prompt              rules + numbered sources + question
+  5. call the model                Gemini, streamed back as SSE
+  6. stream to the browser         our own SSE events, parsed by hand
+  7. save the run                  Neon, after the response, with after()
+```
+
+## How it works
+
+The question was **"What does the HNSW index do, and why did Postgres ignore it here?"**, sent from a script to `/api/chat` with hybrid retrieval, rerank on, top 5, Gemini 3.5 Flash-Lite, and `debug: true` so every upstream frame came back too. It ran twice in a row: the first time nothing was cached, the second time the query embedding and the rerank were.
+
+| Stage                                 | First run (cold cache)       | Second run (cached) |
+| ------------------------------------- | ---------------------------- | ------------------- |
+| Response headers reach the client     | 84 ms                        | 60 ms               |
+| 1. Embed the question                 | 869 ms (18 tokens)           | 49 ms (cache hit)   |
+| 2. Search: vector ∥ keyword, then RRF | 557 ms                       | 341 ms              |
+| 3. Rerank 20 candidates               | 975 ms (7,694 tokens billed) | 65 ms (cache hit)   |
+| **Sources ready** (server clock)      | **2,401 ms**                 | **456 ms**          |
+| 4. Build the prompt                   | under 1 ms                   | under 1 ms          |
+| 5. Gemini: request to first token     | 766 ms                       | 792 ms              |
+| 5. Gemini: first token to last        | 285 ms (105 output tokens)   | 210 ms (86 tokens)  |
+| **Done** (server clock)               | **3,459 ms**                 | **1,468 ms**        |
+| Last byte at the client               | 3,536 ms                     | 1,524 ms            |
+| 7. Save the run                       | after the response           | after the response  |
+
+The three retrieval steps add up exactly to the "sources ready" time (869 + 557 + 975 = 2,401), because they run one after another: the reranker needs the search results, and vector search needs the query vector. Inside step 2, the vector and keyword queries run in parallel.
+
+Both runs sent **1,910 input tokens**, about 95% of them sources, and cost about **$0.0008** at Flash-Lite's paid list price (₹0 on the free tier).
+
+## In this app
+
+The trace comes from the events `/api/chat` already sends ([Lesson 3](/learn/streaming)):
+
+- `start` goes out at once, carrying the run id. The client has headers within about 70 ms, long before any work is done.
+- `retrieval` carries `embedMs`, `searchMs`, `rerank.ms` and `atMs`: the steps above, measured on the server.
+- `meta` marks Gemini's response headers, and `token`, `usage` and `done` follow. `done` holds `ttftMs`, `lastTokenMs` and `totalMs`, which are saved to `runs` and shown in the [ledger](/ledger).
+- The run is written to Neon with `after()` ([Lesson 3](/learn/streaming)), so the ~300 ms database round trip from this machine never delays the answer.
+
+The code path, in order: `retrieveForChat()` in [`lib/retrieval/index.ts`](https://github.com/JaydeepRamanuj/rag-x-ray/blob/main/lib/retrieval/index.ts), `buildRagMessages()` in [`lib/prompt/builder.ts`](https://github.com/JaydeepRamanuj/rag-x-ray/blob/main/lib/prompt/builder.ts), `gemini.chatStream()` in [`lib/llm/gemini.ts`](https://github.com/JaydeepRamanuj/rag-x-ray/blob/main/lib/llm/gemini.ts), and the route that ties them together, [`app/api/chat/route.ts`](https://github.com/JaydeepRamanuj/rag-x-ray/blob/main/app/api/chat/route.ts).
+
+## Try it
+
+In [Chat](/chat), turn on **Use documents**, pick **hybrid** and **Rerank**, and ask a new question. Ask it again. Then open each answer's streaming debugger from the link under it to see the timeline, and **Inspect** to see the prompt.
+
+## What you should see
+
+- **Retrieval, not generation, is the slow part.** On the first run, 2.4 s of the 3.5 s went to finding sources; Gemini then wrote the whole 105-token answer in under 0.3 s, at about 370 tokens a second.
+- **Caching removes most of it.** The second run's embedding and rerank came from Upstash in 49 ms and 65 ms, and the total fell from 3.5 s to 1.5 s. The 18-token embedding and the 7,694-token rerank weren't billed again.
+- **The model's wait is fixed.** Request to first token was about 0.8 s on both runs. Gemini sends its response headers only when the first token is ready, so `meta` and the first `token` arrive together.
+- **Search is mostly network.** Two small SQL queries over 64 chunks took 340–560 ms, which is the round trip to Neon (about 300 ms from this machine), not the database working. [Lesson 6](/learn/vector-databases) showed the query itself takes under a millisecond.
+- **The answer is honest about a half-covered question.** The sources explain what HNSW does, and it answered that with citations [1][2]. Why Postgres skipped the index is only in [Lesson 6](/learn/vector-databases) and the process log, neither of which is an uploaded document, so it said the sources don't cover that part.
+
+## Interview angle
+
+- **"Your RAG endpoint is slow. Where do you look first?"** Measure every stage before guessing. Here, retrieval (embedding, network to the database, reranking) was 70% of the time and generation under 10%. Cache what repeats (query embeddings, reranks), run independent steps in parallel, and put the database close to the server.
+- **"How do you make a RAG app feel fast?"** Send something at once (the run id and headers within 70 ms), stream tokens as they arrive, show the sources as soon as retrieval finishes, and do the bookkeeping after the response.
+- **"What would you cache in a RAG pipeline?"** Document and query embeddings by content hash, rerank results by query plus candidate list, and, at higher volume, whole answers for identical questions with the same sources. Never cache across a change of model, dimensions or chunking: put those in the key.
+
+## Go deeper
+
+- [Lesson 3: Streaming](/learn/streaming), [Lesson 7: Hybrid retrieval](/learn/hybrid-retrieval), [Lesson 8: Reranking](/learn/reranking), [Lesson 11: Caching and cost](/learn/caching-and-cost)
+- [Next.js: `after`](https://nextjs.org/docs/app/api-reference/functions/after)
+- [Server-Timing header (MDN)](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Server-Timing), a standard way to expose stage timings like these to the browser

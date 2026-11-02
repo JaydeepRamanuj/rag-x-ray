@@ -1,0 +1,1 @@
+ALTER TABLE "chunk_sets" ADD COLUMN "threshold" real;

@@ -1,0 +1,99 @@
+# Lesson 12: Libraries vs hand-rolled
+
+## The idea
+
+Phases 1 to 5 built every LLM call by hand: request bodies for two providers, an SSE parser, retries, usage maths. Phase 6 wrote the same chat again on the [Vercel AI SDK](https://ai-sdk.dev). Retrieval and the prompt builder are shared, so the only difference is the code between "here is the prompt" and "here are the tokens in the browser".
+
+A library is a bet: you trade code you own for code someone else maintains. It's a good bet when you know what the library is doing for you, so you can tell when it's hiding something you need.
+
+```text
+              hand-rolled                               AI SDK
+prompt ─▶ lib/llm/gemini.ts | groq.ts  ─┐      prompt ─▶ streamText({ model: google(id) | groq(id) })
+          lib/llm/retry.ts              │                (retries, parsing, usage built in)
+          lib/sse/parser.ts             ├─▶ SSE                 │
+          lib/sse/encoder.ts + events   ┘    ─▶ browser          └─▶ UI message stream ─▶ browser
+```
+
+## How it works
+
+`streamText()` takes a model object and the messages, and returns a result with several views of the same stream: `textStream` (just text), `stream` (typed parts: `text-delta`, `reasoning-delta`, `finish`…), promises for `usage` and `finishReason`, and helpers that turn it into an HTTP response. Each provider package (`@ai-sdk/google`, `@ai-sdk/groq`) translates one common call into its provider's request shape and back.
+
+What it replaces in this app:
+
+| Job                       | Hand-rolled                                                                          | AI SDK                                                   |
+| ------------------------- | ------------------------------------------------------------------------------------ | -------------------------------------------------------- |
+| Request shape             | Gemini: `systemInstruction`, `contents[].parts`, role `model`. Groq: OpenAI messages | `instructions` + `messages`, the same for every provider |
+| Thinking level            | `thinkingConfig.thinkingLevel` / `reasoning_effort` in each body                     | `providerOptions.google` / `providerOptions.groq`        |
+| Reading the upstream SSE  | `lib/sse/parser.ts`, a JSON parse per frame                                          | built in                                                 |
+| Usage                     | Gemini's running totals vs Groq's one final `usage`, normalised by hand              | one shape: `inputTokens`, `outputTokens`, nested details |
+| Retries                   | `lib/llm/retry.ts`: backoff, `retry-after`, a `retry` event to the client            | `maxRetries: 2` by default                               |
+| Our stream to the browser | named events (`event: token`) from `lib/sse/encoder.ts`                              | the UI message stream: typed JSON parts, `data: [DONE]`  |
+
+## In this app
+
+- [`app/api/chat-sdk/route.ts`](https://github.com/JaydeepRamanuj/rag-x-ray/blob/main/app/api/chat-sdk/route.ts): retrieval with the shared `retrieveForChat()`, the prompt with the shared `buildRagMessages()`, then `streamText()` inside `createUIMessageStream()`. The run id and the sources go out as custom `data-run` and `data-retrieval` parts, the totals ride on the `finish` part as message metadata, and the run is saved with `config.engine = "ai-sdk"` so it appears in the [ledger](/ledger).
+- [`/lab/sdk`](/lab/sdk) shows both sides' source, counted, and races one question through both routes at once.
+
+```ts
+const result = streamText({
+  model: google("gemini-3.5-flash-lite"),
+  providerOptions: { google: { thinkingConfig: { thinkingLevel: "minimal" } } },
+  instructions: system.content, // v7 renamed `system` to `instructions`
+  messages,
+  abortSignal: request.signal,
+  onEnd: ({ usage }) => save(usage),
+});
+writer.merge(toUIMessageStream({ stream: result.stream }));
+```
+
+**What probing v7 taught us.** `ai` 7.0.159 is a major version with renames. The docs report caught most of them, and a live call settled the rest:
+
+- `system` is now `instructions`, and a system-role message inside `messages` is rejected unless you opt in. `fullStream` is now `stream`, `onFinish` is now `onEnd`, and `createGoogleGenerativeAI` is now `createGoogle`. The old names still work with deprecation warnings.
+- Usage moved its details into nested objects: `inputTokenDetails.cacheReadTokens` and `outputTokenDetails.reasoningTokens`. On Groq, `outputTokens` was 43 = 37 text + 6 reasoning, the same rule [Lesson 2](/learn/tokens) settled on by hand.
+- The Google provider reads `GOOGLE_GENERATIVE_AI_API_KEY` by default, so the route passes this app's `GEMINI_API_KEY` explicitly.
+- v7 needs Node 22, so `package.json` now says so.
+
+## Try it
+
+Open [/lab/sdk](/lab/sdk) and press **Race** twice. Open **Wire format** on both lanes, and click a file on the left to see what one line on the right replaced.
+
+## What you should see
+
+**Code:** the hand-rolled side is **8 files, 709 lines of code** (935 with comments); the SDK route is **1 file, 208 lines** (250). The SDK route still does everything that is this app's business: validation, retrieval, the prompt, saving the run. What disappeared is the provider plumbing.
+
+**Same prompt, same bill.** Both routes billed exactly **1,961 input tokens** for "How does Reciprocal Rank Fusion merge two lists?", because they send the same messages. Output varied between 79 and 110 tokens on both, run to run.
+
+**Speed is the provider's, not the library's.** In one race the SDK reached its first token at 4.06 s against 4.53 s hand-rolled; in the next the hand-rolled route took 1.55 s and the SDK 5.12 s. Gemini's latency swings by seconds between identical requests, which buries any difference in the library's overhead.
+
+**The wire.** The SDK sends 15 unnamed events, each a JSON part with a `type`:
+
+```text
+data: {"type":"data-run","data":{"runId":"…"}}
+data: {"type":"start","messageId":"YKUklSD4jtkY4Inj"}
+data: {"type":"text-delta","id":"0","delta":"A cross"}
+data: {"type":"finish","finishReason":"stop","messageMetadata":{…}}
+data: [DONE]
+```
+
+with the header `x-vercel-ai-ui-message-stream: v1`. Ours names each event (`event: token`). The SDK's stream was 1.7 KB against our 10.4 KB, but that's a design choice, not the library: our `retrieval` event carries each source's full text for the inspector, while the SDK route sends only titles.
+
+**What the library hides**, found by using it:
+
+- **A stopped stream has no usage.** The SDK reports usage once, in the final `finish` part. Gemini actually sends a running total on every chunk, which our adapter keeps, so a run stopped halfway still shows the tokens you paid for. With the SDK, it shows none.
+- **Retries are silent.** Two retries happen by default, but nothing reaches the client. Our route sends a `retry` event, which the streaming debugger draws on its timeline.
+- **Headers come late.** Groq's `x-ratelimit-*` headers are on `finalStep.response.headers`, available only after the stream ends. Our debugger shows them when the response starts.
+- **Errors are hidden by default.** `createUIMessageStream` turns any server error into "An error occurred." unless you supply `onError`, which is safer for a product and unhelpful for a learning app.
+- **Provider internals leak through.** Gemini's last `text-delta` carried an opaque `thoughtSignature` blob in `providerMetadata`, forwarded to the browser untouched.
+
+## Interview angle
+
+- **"Would you use an SDK or call the API directly?"** The SDK for a product: provider switching, retries, typed streams and tool calling are real work to maintain. Direct calls when you need something the abstraction drops, such as partial usage on cancel, every rate-limit header, or a provider feature it doesn't expose yet. Knowing the raw API is what lets you tell which case you're in.
+- **"What's the cost of an abstraction like this?"** Major-version churn (v7 renamed `system`, `fullStream`, `onFinish` and the usage fields), defaults you didn't choose (silent retries, hidden errors), and information that arrives later or not at all. Pin the version and read the migration guide.
+- **"How would you compare two implementations fairly?"** Hold everything else constant (the same retrieval, prompt and model, the same input token count) and run them at the same time, several times. Single latency numbers from a shared free tier are noise.
+
+## Go deeper
+
+- [AI SDK: streamText reference](https://ai-sdk.dev/docs/reference/ai-sdk-core/stream-text)
+- [AI SDK: migration guide to 7.0](https://ai-sdk.dev/docs/migration-guides/migration-guide-7-0)
+- [AI SDK: stream protocols](https://ai-sdk.dev/docs/ai-sdk-ui/stream-protocol)
+- [AI SDK: Google provider](https://ai-sdk.dev/providers/ai-sdk-providers/google-generative-ai) and [Groq provider](https://ai-sdk.dev/providers/ai-sdk-providers/groq)

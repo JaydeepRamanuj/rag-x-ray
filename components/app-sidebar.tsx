@@ -20,7 +20,20 @@ import {
 } from "@/components/ui/sidebar";
 import { navGroups } from "@/lib/nav";
 
+const allHrefs = navGroups.flatMap((g) => g.items.map((i) => i.href));
+
+/** The most specific nav item for a path, so /learn/glossary lights up Glossary, not Lessons too. */
+function activeHref(pathname: string | null) {
+  if (!pathname) return null;
+  return (
+    allHrefs
+      .filter((h) => pathname === h || pathname.startsWith(`${h}/`))
+      .sort((a, b) => b.length - a.length)[0] ?? null
+  );
+}
+
 function NavItems({ pathname }: { pathname: string | null }) {
+  const active = activeHref(pathname);
   return navGroups.map((group) => (
     <SidebarGroup key={group.label}>
       <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
@@ -30,7 +43,7 @@ function NavItems({ pathname }: { pathname: string | null }) {
             <SidebarMenuItem key={item.href}>
               <SidebarMenuButton
                 tooltip={item.title}
-                isActive={pathname?.startsWith(item.href) ?? false}
+                isActive={item.href === active}
                 render={<Link href={item.href} />}
               >
                 <item.icon />

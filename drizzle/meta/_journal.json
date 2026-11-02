@@ -15,6 +15,41 @@
       "when": 1793426598506,
       "tag": "0001_init_schema",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793427939927,
+      "tag": "0002_runs_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793431496467,
+      "tag": "0003_documents_hash",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793436154718,
+      "tag": "0004_ledger_usage",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793441847826,
+      "tag": "0005_chunk_sets_threshold",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793445052023,
+      "tag": "0006_eval_runs_status",
+      "breakpoints": true
     }
   ]
 }

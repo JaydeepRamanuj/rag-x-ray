@@ -1,0 +1,51 @@
+# Lesson 2: Tokens and tokenisers
+
+## The idea
+
+Models don't read characters or words; they read **tokens**, chunks of text from a fixed vocabulary. "tokenisation" might be one token or three, depending on the model. Everything is measured in tokens: the context window, the rate limits, and the bill.
+
+```text
+"Why is the sky blue?"  →  [Why] [ is] [ the] [ sky] [ blue] [?]   ≈ 6 tokens
+```
+
+## How it works
+
+**Tokenisers are learned.** Byte-pair encoding (BPE) starts from bytes and repeatedly merges the most frequent pairs into new tokens until the vocabulary hits a target size (about 200,000 for GPT-OSS's `o200k`). Common English words become single tokens. Rare words, code, and most non-English scripts split into several. That's why the same text costs more in Hindi than in English.
+
+**Counts differ between models** because each family has its own vocabulary. And the count you're billed for includes more than your text:
+
+- **Chat templates.** Messages are wrapped in special tokens that mark roles. GPT-OSS uses the "harmony" format, which also adds a default system section. A one-line system prompt plus a five-word question was billed as **86 input tokens** on Groq.
+- **The system prompt.** Gemini's `countTokens` returned 7 for the bare question. The same question streamed with a system instruction was billed as 13.
+
+**Input vs output pricing.** Output tokens cost more than input, typically 4 to 8 times as much. Each output token needs a full forward pass of the model, while input tokens are processed in parallel. At paid prices, Gemini 3.5 Flash-Lite charges $0.30 per million input tokens and $2.50 per million output tokens. **Thinking tokens are billed as output**, which is why this app keeps reasoning at the lowest level.
+
+**Cost of one call** = (input − cached) × input price + cached × cached price + output × output price, all per million. Cached input is a discount for repeated prompt prefixes, covered in Lesson 11.
+
+**Context window**: the maximum tokens in (input + output) for one call. GPT-OSS on Groq has 131,072. In RAG, the window is the budget you spend on retrieved chunks.
+
+## In this app
+
+- [`lib/config.ts`](https://github.com/JaydeepRamanuj/rag-x-ray/blob/main/lib/config.ts): `estimateCostUsd()` implements the formula above, with tests in `lib/config.test.ts`.
+- [`lib/llm/groq.ts`](https://github.com/JaydeepRamanuj/rag-x-ray/blob/main/lib/llm/groq.ts): `countTokens()` estimates locally with the `o200k_harmony` tokenizer, because Groq has no count endpoint. It's marked `exact: false` because it can't see the chat template's extra tokens.
+- [`lib/llm/gemini.ts`](https://github.com/JaydeepRamanuj/rag-x-ray/blob/main/lib/llm/gemini.ts): `countTokens()` calls Gemini's API, wrapping the full request so the system instruction is counted.
+
+## Try it
+
+Ask the same question in [Chat](/chat) on Gemini 3.5 Flash-Lite, then on GPT-OSS 20B.
+
+## What you should see
+
+The **in** count for GPT-OSS is several times Gemini's for identical text, because of the harmony template. GPT-OSS also shows **thinking** tokens inside **out**, and the "cost if paid" column reflects them.
+
+## Interview angle
+
+- **"Why do output tokens cost more than input?"** Input is processed in one parallel pass; output is generated one token at a time, each needing its own forward pass and holding GPU memory for longer.
+- **"How would you estimate cost before calling the API?"** Count tokens locally with the model's tokenizer, add a margin for the chat template, and multiply by list prices. Estimate output from a `max_tokens` cap or historical averages.
+- **"Why is the token count higher than you expected?"** Chat templates, system prompts, and (for reasoning models) hidden thinking tokens.
+
+## Go deeper
+
+- [OpenAI: what are tokens?](https://help.openai.com/en/articles/4936856-what-are-tokens-and-how-to-count-them)
+- [gpt-tokenizer playground](https://gpt-tokenizer.dev)
+- [Gemini: understand and count tokens](https://ai.google.dev/gemini-api/docs/tokens)
+- [Sennrich et al., BPE for neural machine translation (2016)](https://arxiv.org/abs/1508.07909)

@@ -11,12 +11,20 @@ export type Lesson = {
 
 export const lessons: Lesson[] = [
   {
+    slug: "start-here",
+    number: 0,
+    title: "Start here",
+    summary: "RAG in plain words, and a guided tour of the app in the order a question flows.",
+    phase: 6,
+    written: true,
+  },
+  {
     slug: "llm-api-call",
     number: 1,
     title: "How an LLM API call works",
     summary: "Messages, roles, parameters, the response body.",
     phase: 1,
-    written: false,
+    written: true,
   },
   {
     slug: "tokens",
@@ -24,7 +32,7 @@ export const lessons: Lesson[] = [
     title: "Tokens and tokenisers",
     summary: "Why counts differ, input vs output pricing, context windows.",
     phase: 1,
-    written: false,
+    written: true,
   },
   {
     slug: "streaming",
@@ -32,7 +40,7 @@ export const lessons: Lesson[] = [
     title: "Streaming",
     summary: "SSE format, ReadableStream, parsing partial events, cancellation.",
     phase: 1,
-    written: false,
+    written: true,
   },
   {
     slug: "embeddings",
@@ -40,7 +48,7 @@ export const lessons: Lesson[] = [
     title: "Embeddings",
     summary: "What a vector means, dimensions, task types, cosine similarity.",
     phase: 2,
-    written: false,
+    written: true,
   },
   {
     slug: "chunking",
@@ -48,7 +56,7 @@ export const lessons: Lesson[] = [
     title: "Chunking",
     summary: "Four strategies and their trade-offs.",
     phase: 2,
-    written: false,
+    written: true,
   },
   {
     slug: "vector-databases",
@@ -56,7 +64,7 @@ export const lessons: Lesson[] = [
     title: "Vector databases",
     summary: "pgvector, HNSW vs exact search, distance operators.",
     phase: 2,
-    written: false,
+    written: true,
   },
   {
     slug: "hybrid-retrieval",
@@ -64,7 +72,7 @@ export const lessons: Lesson[] = [
     title: "Keyword search and hybrid retrieval",
     summary: "Full-text search, the BM25 idea, RRF.",
     phase: 4,
-    written: false,
+    written: true,
   },
   {
     slug: "reranking",
@@ -72,7 +80,7 @@ export const lessons: Lesson[] = [
     title: "Reranking",
     summary: "Bi-encoders vs cross-encoders, cost vs quality.",
     phase: 4,
-    written: false,
+    written: true,
   },
   {
     slug: "prompt-construction",
@@ -80,7 +88,7 @@ export const lessons: Lesson[] = [
     title: "Prompt construction",
     summary: "Context budgeting, citations, lost in the middle, grounding.",
     phase: 3,
-    written: false,
+    written: true,
   },
   {
     slug: "evaluating-rag",
@@ -88,7 +96,7 @@ export const lessons: Lesson[] = [
     title: "Evaluating RAG",
     summary: "Hit rate, MRR, faithfulness, LLM-as-judge pitfalls.",
     phase: 5,
-    written: false,
+    written: true,
   },
   {
     slug: "caching-and-cost",
@@ -96,7 +104,7 @@ export const lessons: Lesson[] = [
     title: "Caching and cost control",
     summary: "Embedding cache, prompt caching, rate limits and backoff.",
     phase: 3,
-    written: false,
+    written: true,
   },
   {
     slug: "libraries-vs-hand-rolled",
@@ -104,7 +112,7 @@ export const lessons: Lesson[] = [
     title: "Libraries vs hand-rolled",
     summary: "What the Vercel AI SDK does for you.",
     phase: 6,
-    written: false,
+    written: true,
   },
   {
     slug: "full-pipeline",
@@ -112,7 +120,7 @@ export const lessons: Lesson[] = [
     title: "The full pipeline",
     summary: "One request traced end to end, with real timings.",
     phase: 6,
-    written: false,
+    written: true,
   },
   {
     slug: "process-log",

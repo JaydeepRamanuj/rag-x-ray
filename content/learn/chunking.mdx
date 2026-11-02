@@ -1,0 +1,100 @@
+# Lesson 5: Chunking
+
+## The idea
+
+You can't embed a whole book as one vector: it would blur every topic together, and the model only reads the first 2,048 tokens anyway. So documents are cut into **chunks**, each embedded on its own. Retrieval can only ever return whole chunks, so **where you cut decides what can be found**. A definition split across two chunks may never be retrieved whole.
+
+```text
+document ─▶ [chunk 1][chunk 2][chunk 3] …   each ~400 tokens
+                    └overlap┘
+```
+
+There are four common ways to decide where the cuts go. They differ in what they respect: nothing (fixed), the text's layout (recursive), its sentences (sentence), or its meaning (semantic).
+
+## How it works
+
+**Size is a trade-off.** Small chunks (100–200 tokens) are precise: the vector is about one thing, so it matches a specific question well. But a small chunk may lack the context needed to answer. Large chunks (800+) carry context but dilute the vector, and they fill the prompt faster. This app starts at **400 tokens with 40 tokens of overlap**.
+
+**Overlap** repeats the end of one chunk at the start of the next, so a sentence near a boundary appears whole in at least one chunk. It costs storage and embedding calls in proportion to its size.
+
+### The four strategies
+
+| Strategy      | Cuts at                                      | Strength                           | Weakness                                            |
+| ------------- | -------------------------------------------- | ---------------------------------- | --------------------------------------------------- |
+| **Fixed**     | exactly N tokens                             | simple, predictable sizes          | cuts sentences and words in half                    |
+| **Recursive** | paragraph, then line, sentence, clause, word | keeps structure; the usual default | sizes vary; a chunk can still mix two topics        |
+| **Sentence**  | whole sentences, packed to N                 | never cuts a sentence              | ignores paragraphs and headings                     |
+| **Semantic**  | where meaning changes                        | chunks follow topics               | costs one embedding per sentence; sizes vary wildly |
+
+**Fixed** fills a chunk to exactly N tokens and cuts, wherever that lands. It's the baseline: everything else is trying to cut fewer sentences than this.
+
+**Recursive** splits on the coarsest separator first (`\n\n`), and only splits a piece again (on `\n`, then `. `, `? `, `! `, then `; `, `, `, then spaces) if it's still too big. Then it merges neighbouring pieces back up until a chunk is nearly full. Only a single "word" bigger than a chunk, like a URL or a base64 blob, gets cut mid-way.
+
+**Sentence** finds sentence boundaries with `Intl.Segmenter`, which implements the Unicode sentence rules (UAX #29). It knows "e.g." and "3.5" aren't sentence ends. It does split after "Dr.", though, so a short abbreviation list glues those back together. Whole sentences are then packed into chunks, with overlap counted in whole sentences too.
+
+**Semantic** embeds every sentence, compares each one with the next, and cuts where the similarity drops below a threshold:
+
+```text
+similarity(sentence i, sentence i+1) = v_i · v_(i+1)     (vectors are unit length)
+cut before sentence i+1  if  similarity < threshold   or   the chunk would exceed N tokens
+```
+
+A lone sentence ("It does.") carries little meaning, so each sentence is embedded together with its neighbours (a window of three). That steadies the signal, but neighbouring windows share two of their three sentences, so similarities run high: on this app's build plan the median is 0.76 and only 10% fall below 0.50. The threshold is therefore model-specific. 0.40 suits all-MiniLM-L6-v2 here; another model would need its own value.
+
+Semantic splitting needs hundreds of embeddings per document (416 for the build plan), so this app runs it on the **local** model (Transformers.js), not Gemini's daily quota. It takes about 3.3 s on a laptop CPU. The lab keeps sentence vectors in memory, so moving the threshold slider re-cuts almost instantly.
+
+**Cleaning matters as much as cutting.** PDFs wrap lines mid-sentence and hyphenate words across lines. The extractor joins `retrie-\nval` back into `retrieval`, collapses runs of spaces, and keeps blank lines, because those paragraph breaks are the boundaries recursive splitting cuts on first.
+
+### Measuring a split
+
+The lab shows, per strategy: chunk count, average size ± standard deviation, smallest and largest, **sentences cut** (sentences with a chunk boundary strictly inside them), and **stored / source** (tokens across all chunks over tokens in the document, which is the overlap's cost).
+
+## In this app
+
+- [`lib/chunking/`](https://github.com/JaydeepRamanuj/rag-x-ray/tree/main/lib/chunking): `fixed.ts`, `recursive.ts`, `sentence.ts` and `semantic.ts`, sharing `spans.ts` (binary-search cut, merge-with-overlap). `index.ts` exposes `chunkText()` for all four. `stats.ts` computes the lab's numbers.
+- Every strategy returns exact character offsets, which is how the lab tints each chunk inside the source and darkens overlaps. `segments.ts` turns the chunks into coloured stretches.
+- [`lib/embeddings/local.ts`](https://github.com/JaydeepRamanuj/rag-x-ray/blob/main/lib/embeddings/local.ts): the local model used by semantic splitting.
+- `chunk_sets`: one document can hold many chunkings at once. Saving a strategy in the lab creates a new, **inactive** set with both Gemini and local vectors. Chat only searches each document's active set, so an experiment never changes answers until you make it active.
+
+```ts
+// semantic.ts: cut on a drop in similarity, or when the chunk is full
+for (let i = 1; i < pieces.length; i++) {
+  if (similarities[i - 1] < threshold || tokens + pieces[i].tokens > chunkSize) {
+    flush(i - 1);
+    start = i;
+    tokens = 0;
+  }
+  tokens += pieces[i].tokens;
+}
+```
+
+## Try it
+
+Open the [chunking lab at 200 tokens and 20% overlap](/lab/chunking?size=200&overlap=20), pick `build-plan.md`, and scroll through the fixed column looking for ✂ marks. Then drag the semantic threshold from 0.3 to 0.5.
+
+## What you should see
+
+On `build-plan.md` (5,980 tokens, 416 sentences):
+
+| At 400 tokens, 10% overlap | Chunks | Avg ± spread | Sentences cut | Stored / source |
+| -------------------------- | ------ | ------------ | ------------- | --------------- |
+| Fixed                      | 17     | 389 ± 42     | **32**        | 1.11×           |
+| Recursive                  | 17     | 364 ± 33     | 0             | 1.04×           |
+| Sentence                   | 17     | 380 ± 16     | 0             | 1.08×           |
+| Semantic (0.40)            | 25     | 239 ± 123    | 0             | 1.00×           |
+
+At 200 tokens and 20% overlap, fixed cuts 67 sentences across 38 chunks, while recursive cuts none and stores 1.11× the source against fixed's 1.25×. Sentence splitting has the tightest sizes. Semantic has the widest (39 to 395 tokens), because it follows the document's sections rather than a token count. Below a threshold of 0.30, semantic gives the same 17 chunks as the others because only the size cap cuts. At 0.50 it gives 46, many of them a single heading.
+
+## Interview angle
+
+- **"How do you choose a chunk size?"** Start around 300–500 tokens for prose, then measure retrieval quality on a set of real questions (Phase 5). Code and tables often need structure-aware splitting instead.
+- **"Why overlap?"** So information near a boundary appears whole in at least one chunk. 10–20% is typical. It costs proportionally more storage and embeddings, and returns diminish quickly.
+- **"Is semantic chunking worth it?"** Sometimes. It follows topics, but it costs an embedding per sentence, its threshold is tied to one model, and its uneven sizes can leave tiny chunks with too little context. Recursive splitting is a strong, cheap default. Only switch if evals show a gain.
+- **"What breaks naive fixed-size chunking?"** Cutting mid-sentence or mid-word, separating a heading from its section, and splitting tables.
+
+## Go deeper
+
+- [LangChain: recursive text splitter](https://python.langchain.com/docs/how_to/recursive_text_splitter/)
+- [Greg Kamradt: the five levels of text splitting](https://github.com/FullStackRetrieval-com/RetrievalTutorials/blob/main/tutorials/LevelsOfTextSplitting/5_Levels_Of_Text_Splitting.ipynb) (the source of the windowed semantic approach)
+- [Unicode UAX #29: text segmentation](https://www.unicode.org/reports/tr29/) and [`Intl.Segmenter` on MDN](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Intl/Segmenter)
+- [Pinecone: chunking strategies](https://www.pinecone.io/learn/chunking-strategies/)

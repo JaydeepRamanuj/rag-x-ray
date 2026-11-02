@@ -1,4 +1,7 @@
 allowBuilds:
   esbuild: true
+  # Its CPU binaries ship in the package; the script only downloads CUDA ones.
+  onnxruntime-node: false
+  protobufjs: false
   sharp: false
   unrs-resolver: false

@@ -1,0 +1,75 @@
+# Lesson 11: Caching and cost control
+
+## The idea
+
+Every LLM call is billed by the token and limited by the minute and by the day. There are three levers: **don't make the call** (cache the result), **make it cheaper** (send fewer tokens, or tokens the provider has cached), and **pace it** (stay under the rate limits, and back off when you don't). This app runs on free tiers, so its real cost is $0, but the [ledger](/ledger) prices every run as if it were paid, so the levers show up as numbers.
+
+```text
+question ─► embed ──► [Upstash cache] hit? skip the call
+              │
+              ▼
+          retrieve ─► prompt ─► LLM ──► [provider prompt cache] repeated prefix at ~10% of the price
+                                 │
+                                 └─► 429? wait for retry-after, then retry
+```
+
+## How it works
+
+**Caching your own calls.** Embeddings are deterministic: the same text, model and task type always give the same vector. So the app keys each vector by a hash of those three things and stores it in Upstash Redis. Re-uploading a document re-embeds nothing, and asking the same question twice skips the query embedding (about 1.1 s down to 0.16 s). Cached calls never reach Google, so they don't count against the 1,000-requests-a-day embedding quota either. That's why the ledger's embedding chart counts only cache misses.
+
+**Provider prompt caching.** Providers can cache the start of a prompt they've seen recently and bill those tokens at a discount: Gemini 3.5 Flash-Lite charges $0.03 per million cached input tokens instead of $0.30. Gemini does this automatically ("implicit caching"). A live probe with a 6,217-token prompt sent repeatedly:
+
+| Request                 | Sent after | Cached tokens |
+| ----------------------- | ---------- | ------------: |
+| 1st                     | —          |             0 |
+| 2nd, different question | 3 s        |             0 |
+| 3rd, identical          | ~20 s      |         4,071 |
+| 4th, identical          | 5 s        |         4,071 |
+
+Three things to notice. Caching isn't instant. It covers a **prefix**, in blocks (4,071 of 6,217 tokens), never the whole prompt. And it only helps if the start of the prompt stays the same between requests. Groq reported no cached tokens for GPT-OSS 20B on the same test.
+
+**Why RAG barely benefits.** A RAG prompt is rules, then history, then sources and the question. Only the first two repeat between questions, about 90 tokens here, while the sources change every time. None of the app's first 22 runs had a single cached token. Caching pays off when a big, stable block comes first: a long system prompt, a fixed document, or a chat with long history. That's also why the builder puts the sources last.
+
+**Where the money goes.** Output tokens cost more than input: 8.3 times more on Flash-Lite ($2.50 vs $0.30 per million). Across the app's first 22 runs, input was 16,311 tokens and output only 2,059, yet input was **49%** of the paid-tier cost and output 51%. With top-k 5 and short answers, the two are roughly even. Push top-k up and input takes over. The what-if panel on one run:
+
+| Scenario            | Input tokens | Cost per question | Per 1,000 questions |
+| ------------------- | -----------: | ----------------: | ------------------: |
+| 3 sources (the run) |        1,347 |         $0.000619 |               $0.62 |
+| top 10              |        4,226 |         $0.001483 |               $1.48 |
+
+Thinking tokens are billed as output too, which is why every model here runs at its lowest thinking level.
+
+**Rate limits and backoff.** Free tiers limit requests and tokens per minute and per day. Per-minute limits are the ones you actually hit. Two 5,000-token requests to GPT-OSS a few seconds apart got a 429 from Groq ("Limit 8000, Used 4548, Requested 5094 … try again in 12.315s"). The fix is to wait as long as the provider says (`retry-after`) or back off exponentially, and to give up fast when the wait is long. A wait of minutes usually means the daily quota is gone, and retrying won't bring it back. Retries also stop once tokens have started streaming, since replaying would duplicate them.
+
+**Estimating before you send.** The local o200k tokenizer estimates instantly, but it isn't Gemini's: it read the same prose about 10% low, and number-heavy text 22% low (Gemini counts "12345 67890" as 12 tokens, o200k as 5). The what-if panel corrects for this by scaling with the ratio each run actually showed.
+
+## In this app
+
+- [`lib/embeddings/index.ts`](https://github.com/JaydeepRamanuj/rag-x-ray/blob/main/lib/embeddings/index.ts) and [`lib/cache.ts`](https://github.com/JaydeepRamanuj/rag-x-ray/blob/main/lib/cache.ts): cache-first embedding, batching, and a per-minute token budget.
+- [`lib/llm/retry.ts`](https://github.com/JaydeepRamanuj/rag-x-ray/blob/main/lib/llm/retry.ts): backoff on 429 and 5xx, honouring `retry-after`, and failing fast on waits over 30 s.
+- [`lib/config.ts`](https://github.com/JaydeepRamanuj/rag-x-ray/blob/main/lib/config.ts): list prices including cached input, the free-tier limits, and `estimateCostUsd()`.
+- [`lib/tokens/cost.ts`](https://github.com/JaydeepRamanuj/rag-x-ray/blob/main/lib/tokens/cost.ts): `whatIfCost()` re-prices a run with another model, top-k, chunk size, or a cached prefix.
+- [`lib/db/ledger.ts`](https://github.com/JaydeepRamanuj/rag-x-ray/blob/main/lib/db/ledger.ts): daily usage in raw SQL, bucketed by Pacific day (when Gemini's quota resets), with each day's busiest minute. Uploads log their embedding calls to `ingest_usage`.
+
+## Try it
+
+Open the [ledger](/ledger). Switch the chart between Flash-Lite, GPT-OSS and Gemini Embedding, with **Scale to the free quota** on and off. Click a RAG run, set **top 10**, then **1000-token chunks**, then turn on **Cache system prompt + history**.
+
+## What you should see
+
+- With the quota scale on, your daily bars are barely visible under the limit line. Daily quotas are generous for one person; per-minute limits are tighter.
+- Top 10 roughly triples input. Bigger chunks multiply it again.
+- Caching the prefix saves almost nothing on a RAG run, because the prefix is tiny next to the sources.
+- The **Spent on input** tile sits near 50% for short answers, and climbs as prompts get bigger.
+
+## Interview angle
+
+- **"How would you cut the cost of a RAG app?"** Measure first: is it input or output? Then fewer or smaller chunks (with reranking so quality holds), a cheaper model for easy questions, capped history, cached embeddings, and a stable prompt prefix so provider caching can kick in.
+- **"How do you handle 429s?"** Exponential backoff with jitter that respects `retry-after`, a cap on attempts and on wait time, no retries after streaming has begun, and a client-side budget so you rarely hit the limit at all.
+- **"Why do output tokens cost more?"** Input is processed in one parallel pass. Output is generated one token at a time, each step reading the whole context, so it uses far more GPU time per token.
+
+## Go deeper
+
+- [Gemini API: context caching](https://ai.google.dev/gemini-api/docs/caching)
+- [Gemini API: rate limits](https://ai.google.dev/gemini-api/docs/rate-limits)
+- [Groq: rate limits](https://console.groq.com/docs/rate-limits)

@@ -23,3 +23,179 @@ The decisions made while building RAG X-Ray, what broke, and why. One entry per 
 ### What to notice
 
 Open [`/api/health`](/api/health) twice, a few seconds apart, after the app has been idle for more than five minutes. The first `database.ms` is much higher than the second because Neon's compute was asleep. That's the cold start.
+
+## Phase 1: Raw LLM call and streaming (31 Oct 2026)
+
+**What was built:** a provider adapter for Gemini and Groq written with plain `fetch`, a hand-written SSE parser and encoder, `/api/chat` streaming its own SSE events, the [Chat](/chat) page with Stop and live stats, and the streaming debugger at `/runs/[id]/stream`. Every call is saved to `runs`.
+
+### Decisions
+
+- **Probe before coding.** The docs left gaps: where streamed usage arrives, what the thinking setting is called, how a 429 looks. One tiny live call to each provider answered them. Gemini repeats a running `usageMetadata` total on every chunk; Groq sends `usage` once, just before `[DONE]`, and only if you ask with `stream_options.include_usage`.
+- **Thinking is set per model, at its floor.** All four chat models are reasoning models. Gemini 3.5 Flash-Lite accepts `thinkingLevel: "minimal"`, Gemini 3.8 Flash rejects it with a 400 and needs `"low"`, and GPT-OSS takes `reasoning_effort: "low"`. Each model's value lives in `lib/config.ts`.
+- **`outputTokens` means "billed output".** Gemini counts thinking separately from the answer; Groq folds it in. The adapter normalises to answer + thinking, with thinking also reported on its own.
+- **The run id is created in the route, not the database**, so the browser gets it in the first event without waiting on a possibly cold Neon. The run is written with `after()`, which runs once the response finishes, including when the client disconnects.
+- **`runs` gained `status` and `error` columns.** A stopped run keeps its partial answer and whatever usage arrived, so you can see what tokens you paid for. Migration `0002_runs_status`.
+- **Retries stop before streaming starts.** Once tokens reach the user, replaying the request would duplicate them. A `retry-after` longer than 30 s fails fast, because it usually means a daily quota is gone.
+- **One SSE parser for both directions.** The server reads Gemini and Groq with the same `readSse()` that the browser uses to read us.
+
+### What broke
+
+- **Gemini 3.8 Flash returned 503 "high demand"** during the first probe. That's why 5xx is retried as well as 429.
+- **Next 16 rejected `dynamicParams` again**, this time indirectly: the stream page reads the database, so it renders inside `<Suspense>` to keep the rest of the page prerenderable.
+- **The React Compiler lint rule flagged reading a ref during render** (the stream start time). It became state.
+- **A wide table stretched the whole page.** The main column is a flex child, and flex children won't shrink below their content's width unless told to with `min-w-0`. The fix is one class on the layout; lesson tables also scroll on their own now.
+- **`next/link` inside `mdx-components.tsx` broke lessons in dev.** Lessons load through a dynamic import, and Next's dev-time navigation check couldn't resolve the Link module along that path. Plain `<a>` tags do the job for lesson links.
+- **The debugger first showed upstream frames double-escaped** (JSON inside our JSON envelope). It now shows each frame exactly as the provider sent it.
+
+### What to notice
+
+- In the debugger with **slow network** on, the server's work ends at about 1.6 s but the browser is still reading at 11 s. One read can deliver twenty events at once once the client falls behind. That's back-pressure.
+- GPT-OSS bills about 80 input tokens for a five-word question; Gemini bills about 7. The difference is GPT-OSS's chat template, covered in Lesson 2.
+
+## Phase 2: Ingestion and basic RAG (31 Oct 2026)
+
+**What was built:** a [Documents](/documents) page that uploads `.md`, `.txt` and `.pdf` files. Each file is extracted, cleaned, split into ~400-token chunks with 40 tokens of overlap, embedded in batches with Gemini, and stored in pgvector. Embeddings are cached in Upstash Redis. In [Chat](/chat), **Use documents** retrieves the top-k chunks for each question and the answer cites them as [1], [2], with the sources listed underneath.
+
+### Decisions
+
+- **Re-uploads replace, they don't duplicate.** `documents.content_hash` is a sha256 of the extracted text. Uploading the same content again re-embeds it (from the cache) and swaps the old copy out, but only after the new one is ready, so a failed upload never leaves you with neither.
+- **Everything for one document is written in one transaction.** The Neon HTTP driver can't hold a transaction open across awaits, but `db.batch()` sends all the statements together. IDs are generated in the app so later statements can reference earlier rows.
+- **Sources go in the last user message, not the system prompt.** They belong to that question only. Earlier turns are re-sent without their sources, so the prompt doesn't grow by top-k chunks every turn.
+- **Queries are cached too**, with their own task type in the key. Asking the same question again skips the embedding call (about 1.1 s down to about 0.16 s).
+- **A shared password guards uploads and deletes.** With `APP_PASSWORD` unset, local dev is open and production refuses uploads. The comparison is constant-time.
+- **Answers render as Markdown**, with citations rewritten into links that open the matching source.
+
+### What broke
+
+- **The documented embedding config was silently ignored.** Google's docs mark the top-level `taskType` and `outputDimensionality` fields deprecated in favour of `embedContentConfig`. Sent that way, the API returned 3,072-dim vectors with no error. The old fields work, so the code uses them, with a comment explaining why.
+- **Truncated embeddings aren't unit length.** The 768-dim vectors came back with a length of about 0.59. Cosine search doesn't care, but anything that treats the dot product as similarity would be wrong, so vectors are normalised before storage.
+- **No token usage from the embeddings API**, despite the docs. Embedding tokens are estimated locally.
+- **Prettier reformatting files under a running dev server** set off a reload loop that froze the browser pane. Formatting now runs with the dev server stopped.
+
+### What to notice
+
+- `EXPLAIN ANALYZE` on the 18-chunk table shows a sequential scan (0.16 ms) rather than the HNSW index (10 ms when forced). The planner is right: indexes pay off at thousands of rows, not dozens. The app's ~500 ms "search" time is almost entirely network latency to Neon.
+- Relevant and loosely related chunks score within about 0.1 of each other (0.77 vs 0.65). The ranking matters, not the absolute score.
+
+## Phase 3: Prompt inspector and token ledger (31 Oct 2026)
+
+**What was built:** an **Inspect** button on every chat answer, opening the prompt inspector at `/runs/[id]/prompt`. It shows the exact messages sent, split into system prompt, history, framing, numbered sources and question, with a token bar per part, and it can count each part with the model's own tokenizer. Edit the rules, drop sources or switch model, then **Re-run** to compare the answers side by side. The [ledger](/ledger) lists every run's tokens, latency and paid-tier cost, charts daily usage against each model's free quota, and re-prices any run with a what-if panel. Lessons [9](/learn/prompt-construction) and [11](/learn/caching-and-cost).
+
+### Decisions
+
+- **Saved prompts are taken apart, not re-derived.** `final_prompt` is the source of truth. The inspector rebuilds the sources from `run_chunks` and uses them only if they reproduce the saved text exactly. If the chunks have gone (document deleted or re-uploaded), it parses the numbered blocks back out of the text instead. Either way, it shows what was sent rather than what the code would send today.
+- **Estimates per part, the provider's number for the total.** Each part gets a local o200k estimate; the bill comes from `runs.input_tokens`. The gap between them is shown, not hidden: for Gemini it's almost all tokenizer (its per-part counts summed to 2,263 against 2,260 billed), while for GPT-OSS it's mostly chat template.
+- **Token counting stays on the server.** The o200k vocabulary is too big to ship to the browser, so estimates are made when the page renders and when the ledger loads.
+- **A re-run is a normal run with a parent.** It goes through `/api/chat` in raw mode with `parentRunId`, so it is timed, saved and priced like any other run, and shows in the ledger. Its chunks are saved with `used_in_prompt` true or false, which is what that column was waiting for since Phase 0.
+- **Migration `0004_ledger_usage`:** a `reasoning_tokens` column on `runs` (thinking was only inside `output_tokens` before), and an `ingest_usage` table so upload embeddings count towards the daily chart. Upload usage is logged even if storing the document then fails, and kept when the document is deleted (`ON DELETE SET NULL`), because the quota was used either way.
+- **Days are Pacific days.** Gemini's daily quota resets at midnight Pacific, so the chart buckets with `AT TIME ZONE 'America/Los_Angeles'` in SQL, and the axis fills in empty days in JS.
+- **Gemini's free limits come from Jd's AI Studio** (Flash-Lite: 15 RPM, 250K TPM, 500 RPD). Google no longer publishes them.
+- **The what-if holds output constant** and scales input by the ratio each run actually showed between the provider's count and our estimate. Switching provider drops that ratio and marks the result approximate.
+
+### What broke
+
+- **The disk filled up mid-phase**, and pnpm couldn't install Recharts. Then shadcn's own `pnpm add` used a different store path than the existing `node_modules`. The fix was installing Recharts directly with the project's store (`--store-dir`), then letting shadcn write only `chart.tsx`.
+- **Recharts drew nothing in a hidden browser pane.** React 19 reveals streamed Suspense content on an animation frame, and a background tab doesn't get any, so the ledger stayed on "Loading runs…" with its HTML already delivered. Not an app bug, but worth knowing when a page "hangs" only while you're not looking.
+- **The React Compiler lint rule rejected `Math.random()` in render** (a fallback list key), and a counter mutated inside `map()` during render. Both became pure derivations.
+- **Clicking Inspect the instant an answer finished could beat the database write**, since runs are saved with `after()`. The inspector page retries the lookup briefly before giving up.
+
+### What to notice
+
+- 95% of a top-5 RAG prompt is sources. Dropping the two lowest-ranked of five took a run from 2,260 to 1,347 input tokens with the same answer, because it only cited [1] and [3].
+- Gemini's implicit cache works on the free tier, but only after about 20 s and only on a prefix (4,071 of 6,217 tokens). None of the RAG runs so far had a cached token: the stable prefix is under 100 tokens.
+- Output costs 8.3× input on Flash-Lite, so across 22 runs the bill was split about 49/51 between input and output, even though there was 8× more input.
+
+## Phase 4: Chunking lab and retrieval arena (31 Oct 2026)
+
+**What was built:** three more chunkers (fixed, sentence, semantic) next to recursive, and the [chunking lab](/lab/chunking), which splits one document four ways side by side with chunks tinted, overlaps shaded and mid-word cuts marked. Any strategy can be saved as a new chunk set, then activated, re-embedded or deleted. Local embeddings (all-MiniLM-L6-v2 through Transformers.js) run inside the server. Retrieval gained Postgres full-text search, Reciprocal Rank Fusion and a cached Cohere reranker, compared in the [retrieval arena](/lab/retrieval). Chat got a vector / keyword / hybrid switch and an optional rerank. Lessons [5](/learn/chunking) (expanded), [7](/learn/hybrid-retrieval) and [8](/learn/reranking).
+
+### Decisions
+
+- **The lab previews in memory and saves on request.** Sliders re-chunk on the server with no API calls, because semantic splitting uses the local model. Saving embeds with both models and stores a new set that starts **inactive**, so an experiment never changes chat's answers until you choose it.
+- **Semantic splitting runs on the local model.** It needs one embedding per sentence (416 for the build plan), which would eat Gemini's daily quota. Each sentence is embedded with its neighbours, and recent vectors are memoised in memory so the threshold slider stays quick after the first ~3.3 s run.
+- **The local model is called without the `pipeline()` helper.** The helper truncates at the tokenizer's 512-token limit, but MiniLM was trained on at most 256. Calling the tokenizer and model directly caps input at 256 and makes the mean pooling visible. The vectors match the helper's to more than 0.9999 on short text.
+- **fp32 weights, CPU binaries only.** fp32 embedded 64 sentences in 73 ms (q8: 42 ms) and is the reference quality. onnxruntime-node's install script only downloads CUDA add-ons, so pnpm is told not to run it.
+- **Keyword search ORs the query terms.** `plainto_tsquery` joins words with AND, and three natural questions out of three matched nothing.
+- **Rerank reorders hybrid's top 20.** It's cached in Upstash per query and candidate list, and every real call is counted per month in Redis, since Cohere doesn't report what's left of the trial's 1,000 calls. On in the arena, off in chat, password-guarded in both.
+- **Migration `0005_chunk_sets_threshold`** (applied): the semantic threshold is stored with its set.
+- **Uploads now store local vectors too**, and existing chunks were backfilled with the arena's **Embed local** button.
+
+### What broke
+
+- **Cohere's docs and API disagree on billing.** The pricing page explains Rerank in "search units". The live API reports `billed_units.input_tokens` for `rerank-v5.0-fast` (about 6,900 per 20-chunk call), and the Rerank 5 launch post confirms $0.02 per 1M tokens. The pricing page's per-unit price is rendered client-side, so even a fetch of it didn't show one.
+- **The Transformers.js pipeline silently drops text past 512 tokens.** A long text and the same text with a completely different ending scored 0.9998. No error, no warning.
+- **`Intl.Segmenter` splits after "Dr."** and returns a blank line as its own sentence. Both are glued back on.
+- **Only one `next dev` per folder.** Another session's dev server was already running here, and Next 16 refuses a second one, so this phase was checked against that server, and files were formatted one at a time through Prettier's stdin instead of `prettier --write`.
+- **Neon's tagged-template client can't nest one SQL fragment inside another**, so the embedding column choice is two whole queries rather than an interpolated column name. Column names can't be parameters anyway.
+
+### What to notice
+
+- **Hybrid beats vector on exact names.** For "umap-js", Gemini vector search's top 3 contains none of the three chunks that mention it; keyword and hybrid return all three.
+- **Rerank fixes the order.** For "Which library draws the 2D projection, and where does it run?", the answer chunk is 2nd in vector (0.616 against 0.619 for a wrong chunk) and 3rd in hybrid. Rerank puts it 1st at 0.644, with the next at 0.219.
+- At size 400, fixed splitting cut 32 of 416 sentences; recursive, sentence and semantic cut none. The cost of overlap is visible as stored / source: 1.11× for fixed at 10%, 1.25× at 20%.
+
+## Phase 5: Eval mode (31 Oct 2026)
+
+**What was built:** five learning documents on how LLMs generate text, the history from rules to Transformers, RAG, LangChain and LangGraph, and the stages of a modern AI pipeline (in `content/corpus/`, uploaded like any other document), and a 25-question eval set drawn from them and the build plan. The [Evals](/evals) page runs the set against one configuration at a time, in retrieval-only mode (hit rate and MRR, no LLM) or full mode (answers plus an LLM judge for faithfulness and relevance), with run history, per-question drill-down and a compare view. Lesson [10](/learn/evaluating-rag).
+
+### Decisions
+
+- **The corpus was written for this.** The library had two documents and 18 chunks, where every setting scores near 100% and nothing can be measured. Five longer documents (46 chunks) give vector, keyword, hybrid and rerank room to differ, and double as reading material.
+- **Hits are matched on text, not chunk ids.** Each item stores its source passage; a chunk is a hit when it contains at least 60% of the passage's word trigrams. On the active chunks, every passage matched exactly one chunk at 100%, and the next-best chunk reached 17% at most, so the threshold sits far from both.
+- **The judge grades five answers per call.** Gemini 3.8 Flash's free tier on this project is 5 requests a minute and **20 a day**. One call per answer would need 25 for a single run.
+- **The browser drives each run, one step per request.** A full run took 5 to 12 minutes, mostly waiting on rate limits and the judge, far past a Vercel function's limit. Each step saves to `eval_runs`, so a closed tab leaves a run that can be resumed. Migration `0006_eval_runs_status` (applied) adds `status`, `error`, `cost_usd` and `finished_at` to `eval_runs`, and `ordinal` to `eval_items`.
+- **Eval calls stay out of `runs`.** Totals live on `eval_runs`; the ledger's daily chart unnests each run's answer and judge calls and stacks them as **Eval requests**, because they still spend the same daily quota.
+- **Chunk sets are resolved when a run starts.** "Active" or a strategy becomes a list of chunk set ids stored in the run's config, so changing the active set later doesn't change what an old run claims to have searched. A strategy that some document lacks is refused rather than mixed.
+
+### What broke
+
+- **Gemini 3.8 Flash was slow and overloaded.** Single judge calls took 32–187 s with no retries, and one batch failed after three `503 This model is currently experiencing high demand`. The step route's limit went from 120 s to 300 s, the page retries a failed batch once after a pause, and a finished run with unjudged answers gets a **Complete** button that reopens it.
+- **The judge's 20 requests a day ran out during the second full run**, after six successful judge calls that day, so retried 503s seem to count against the quota. The page now stops judging on a daily-quota 429 instead of retrying, and the compare view averages judge scores only over questions judged in both runs.
+- **A dev server compiled mid-edit served a half-built page.** The evals page failed inside Drizzle with "Cannot convert undefined or null to object" while the same query worked in a route and in a script; a later recompile fixed it with no code change.
+
+### What to notice
+
+- **Retrieval only, k = 5:** vector 88% hit rate / 0.83 MRR, keyword 92% / 0.77, hybrid 92% / 0.88, hybrid + rerank 100% / 0.98. Keyword finds more answers than vector but ranks them lower; hybrid keeps both strengths; only rerank finds the two answers hidden in one row each of the build plan's tech-decisions table.
+- **Full baseline (vector):** faithfulness 5.0/5 and relevance 4.88/5 over 25 answers, 105,186 tokens, $0.064 at list price. The one low relevance score was the question whose passage vector search missed: the model said the sources didn't cover it, which is the right behaviour and still a failed answer.
+- **Full hybrid + rerank:** hit rate 100% and MRR 0.98; three questions fixed and two ranked higher than the baseline, none worse. Only 5 of its 25 answers were judged before the quota ran out (5.0/5 on both scores).
+- **The judge never gave less than 5 for faithfulness.** That's a lenient judge or a well-grounded prompt, and the eval can't tell which; relevance and the retrieval metrics are what moved.
+
+## Phase 6: Embedding explorer, library comparison, polish (1 Nov 2026)
+
+**What was built:** the [embedding explorer](/lab/embeddings), which maps every active chunk to 2D with UMAP or PCA in the browser, drops a query on the map as a star linked to its 5 true nearest chunks, and checks how many of those the map keeps close. It switches between Gemini at 768 or 256 dims and the local model, and has a similarity playground underneath. `/api/chat-sdk` is the same RAG chat on the Vercel AI SDK, and the [library comparison](/lab/sdk) page shows both implementations' source side by side and races them. Also: lessons [12](/learn/libraries-vs-hand-rolled) and [13](/learn/full-pipeline), an explorer section in [Lesson 4](/learn/embeddings), and a README with an architecture diagram and screenshots. Every lesson is now written.
+
+### Decisions
+
+- **256 dims are truncated in the browser, not stored.** Gemini's vectors are Matryoshka-trained, so the first 256 of the stored 768 are a 256-dim embedding once renormalised (their length is about 0.65). No new column, no re-embedding, and the explorer can compare both sizes on the same vectors.
+- **Neighbours are computed in full dimensions; the map is only a picture.** The side panel counts how many of the true top 5 are also the 5 closest dots, so the distortion is measured rather than hidden.
+- **UMAP is refitted with the query as one more point.** umap-js has `transform()`, which places a new point without moving the others, but on four test questions it put the query near 0, 0, 3 and 3 of its 5 true neighbours; refitting got 2, 2, 5 and 5. A refit costs about 300 ms, and the layout shifts slightly per query. PCA's axes come from the chunks alone, and the query is projected exactly.
+- **PCA is hand-written** (power iteration, about 60 lines, unit-tested) rather than a library, so the maths stays visible like everything else here.
+- **`/api/embeddings` is public, like chat.** It returns stored vectors (~610 KB for 64 Gemini vectors as JSON) and embeds at most two 500-character texts per call, cached in Upstash.
+- **The SDK route shares retrieval and the prompt builder**, so the comparison isolates the model call and the stream. It saves runs with `config.engine = "ai-sdk"` and `source: "sdk"`, sends the run id and sources as custom `data-*` parts, and puts the totals in the `finish` part's message metadata.
+- **The comparison page reads its source files from disk** in a `'use cache'` function with `cacheLife("max")`, so it's prerendered at build time. The files are also listed in `outputFileTracingIncludes` in case it revalidates on the server.
+- **Screenshots come from a production build**, captured with headless Chrome over the DevTools protocol so pages that need a click (arena search, race, replay) can be shot with real timings.
+
+### What broke
+
+- **AI SDK v7 renamed half of what the docs online still show.** `system` became `instructions`, `fullStream` became `stream`, `onFinish` became `onEnd`, `createGoogleGenerativeAI` became `createGoogle`, and usage details moved to `inputTokenDetails` and `outputTokenDetails`. It also needs Node 22, so `engines.node` went up from 20.
+- **A union of provider options didn't type-check.** `{ google: … } | { groq: … }` fails the SDK's `ProviderOptions` index signature, because the missing key is `undefined`. The helper now declares its return type as `streamText`'s own parameter type.
+- **Headless Chrome's `--virtual-time-budget` froze `performance.now()`**, so the first explorer screenshot claimed UMAP took "0 ms", and dev mode added the Next badge. Driving Chrome over CDP with real waits against `next start` fixed both.
+- **The production server refused rerank**, because `APP_PASSWORD` isn't set locally. Correct, but the error says "uploads are disabled" for a search. The arena screenshot came from the dev server instead.
+- **A hidden browser pane again left a page on "Loading vectors…"**: background tabs throttle timers, and the explorer schedules UMAP with `setTimeout`.
+
+### What to notice
+
+- **The map loses most of the space.** PCA's two axes keep 24.6% of the variance of 64 Gemini vectors. For "What does a cross-encoder reranker add?", UMAP keeps 3 of the 5 true neighbours closest to the star, PCA 2, and PCA at 256 dims 0.
+- **Truncation is cheap in quality.** At 256 dims, 88.8% of each chunk's top-5 neighbours are the same as at 768; for that query the best chunk stays first and two of five change.
+- **Each model has its own floor.** Gemini scores two unrelated sentences 0.708, MiniLM 0.013. MiniLM rates "safe" and "not safe for children" 0.936, above two synonyms (0.836), and a Spanish translation 0.164, where Gemini gives 0.963.
+- **The SDK route is 208 lines against 709 across eight hand-rolled files**, both counting code only. Both send the same 1,961 input tokens for the same question; their time to first token swapped places between two races (4.06 vs 4.53 s, then 5.12 vs 1.55 s), which is Gemini's variance, not the library's.
+- **What the SDK hides:** usage arrives only with the finish part, so a stopped stream records none; its two retries are silent; rate-limit headers are only available after the stream; errors become "An error occurred." unless you supply `onError`; and Gemini's opaque `thoughtSignature` rides along to the browser.
+- **Retrieval dominates latency.** One hybrid + rerank question: embed 869 ms, search 557 ms, rerank 975 ms, then 766 ms to Gemini's first token and 285 ms for 105 tokens, 3.5 s in all. With the embedding and rerank cached: 1.5 s.
+
+**Follow-up: guides for first-time users (1 Nov 2026).** Jd found the tools hard to use without already knowing RAG, and asked whether the lessons covered how to use each page. They didn't: lessons explain concepts and assume the vocabulary, and each page had only a one-paragraph intro. Added:
+
+- A **How to use this page** side panel on all ten tools (`content/guides/*.tsx`), with the same sections each time: what it's for, why it exists and what you'd miss without it, every input, a five-step experiment with what you should see, how to read each number, pros and cons, and things that look wrong but aren't. It sits beside the page on wide screens so you can follow the steps, opens on a page's first visit, and remembers ticked steps.
+- A plain-words [glossary](/learn/glossary) of 58 terms (`content/glossary.ts`), and `<Term id="…">` hover cards on page intros, guides and lessons. A popover rather than a tooltip, because tooltips don't open on touch. A test fails if any `<Term>` id isn't defined.
+- [Lesson 0: Start here](/learn/start-here), a tour of the pages in the order a question flows through them.
+
+The numbers in the guides came from the running app, not the lessons alone: the what-if panel re-priced a 1,845-token run to 3,591 tokens (+82% cost) at top 10, and 10,679 (+413%) with 1,000-token chunks, while caching its fixed prefix saved only 3% (73 tokens). Writing them turned up two small bugs, both fixed: the Documents page counted chunks from every saved chunk set (build-plan.md showed 42 instead of the 17 chat searches), and a debugger Replay saved the whole 7,000-character prompt as the run's question, which filled the inspector and ledger with text.

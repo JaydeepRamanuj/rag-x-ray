@@ -1,0 +1,59 @@
+# Lesson 6: Vector databases
+
+## The idea
+
+Retrieval means: given the question's vector, find the stored chunk vectors closest to it. A **vector database** stores vectors and answers "nearest neighbour" queries quickly. You don't need a separate service for this: **pgvector** adds a `vector` column type and distance operators to ordinary Postgres, so chunks, documents and vectors live in the same tables and the same SQL.
+
+## How it works
+
+**Distance operators.** pgvector compares vectors with operators:
+
+| Operator | Distance                                | Use                        |
+| -------- | --------------------------------------- | -------------------------- |
+| `<=>`    | cosine distance (1 − cosine similarity) | text embeddings; this app  |
+| `<->`    | Euclidean (L2) distance                 | when vector length matters |
+| `<#>`    | negative inner product                  | unit vectors; fastest      |
+
+**The query** is a plain `ORDER BY … LIMIT`:
+
+```sql
+SELECT c.id, c.content, 1 - (c.embedding <=> $1::vector) AS score
+FROM chunks c
+JOIN chunk_sets cs ON cs.id = c.chunk_set_id AND cs.is_active
+ORDER BY c.embedding <=> $1::vector
+LIMIT 5;
+```
+
+The `ORDER BY` must be the bare distance expression. Sort by the computed `score` instead and Postgres can't use the vector index.
+
+**Exact vs approximate search.** Exact search compares the query with every row: perfect recall, and cost that grows linearly. An **HNSW** index (Hierarchical Navigable Small World) builds a layered graph in which each vector links to its near neighbours. A search starts at the sparse top layer and greedily hops closer to the query, dropping a layer each time. It visits a tiny fraction of the rows, at the cost of occasionally missing a true neighbour. `hnsw.ef_search` (default 40) trades speed for recall at query time.
+
+**Small tables don't use the index, and that's correct.** With 18 chunks, `EXPLAIN ANALYZE` showed Postgres scanning all rows and sorting them in **0.16 ms**. Forcing the HNSW index took **10 ms**. The planner chooses exact search until the table is big enough for the index to pay off. Meanwhile the app's "search" time reads 500 ms or so, and almost all of that is network round trips to Neon (~125 ms each), not the search itself.
+
+**One column per model.** Vectors from different models live in different spaces, so comparing them is meaningless. The `chunks` table has `embedding` (Gemini, 768 dims) and `embedding_local` (MiniLM, 384 dims, coming in Phase 4), each with its own index.
+
+## In this app
+
+- [`lib/retrieval/vector.ts`](https://github.com/JaydeepRamanuj/rag-x-ray/blob/main/lib/retrieval/vector.ts): the raw SQL above, using Neon's tagged-template client so the query stays visible.
+- [`lib/db/schema.ts`](https://github.com/JaydeepRamanuj/rag-x-ray/blob/main/lib/db/schema.ts): the `vector(768)` columns and their HNSW indexes with `vector_cosine_ops`.
+- [`lib/db/documents.ts`](https://github.com/JaydeepRamanuj/rag-x-ray/blob/main/lib/db/documents.ts): a document, its chunk set and every chunk are written with `db.batch()`, one transaction in one round trip.
+
+## Try it
+
+Ask a question in [Chat](/chat) with **Use documents** on, then compare the **search** time with the TTFT.
+
+## What you should see
+
+Search takes a few hundred milliseconds, mostly network, while the model's TTFT is one to three seconds. At this scale, retrieval is never the bottleneck. The ordering of the sources still matters, though: it decides what the model gets to read.
+
+## Interview angle
+
+- **"Why use pgvector instead of a dedicated vector database?"** One system to run. Vectors join with your relational data, and you get transactions and backups for free. Dedicated databases win at very large scale or with heavy filtering needs.
+- **"HNSW vs IVFFlat?"** HNSW gives better recall for the same speed and can be built on an empty table, but uses more memory. IVFFlat clusters vectors into lists, builds faster, and needs data present before it's built.
+- **"Why might your vector index not be used?"** The table is small, the `ORDER BY` isn't the bare distance expression, the operator doesn't match the index's ops class, or there's no `LIMIT`.
+
+## Go deeper
+
+- [pgvector README](https://github.com/pgvector/pgvector)
+- [Malkov & Yashunin, HNSW (2016)](https://arxiv.org/abs/1603.09320)
+- [Neon: pgvector extension](https://neon.com/docs/extensions/pgvector)

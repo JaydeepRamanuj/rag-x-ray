@@ -1,0 +1,69 @@
+# Lesson 3: Streaming
+
+## The idea
+
+Waiting for a whole answer feels slow; watching it appear feels fast, even when the total time is the same. **Streaming** sends tokens as they're generated. The number that matters for perceived speed is **time to first token (TTFT)**, not total time.
+
+This app streams twice: the provider streams to our server, and our server streams to your browser. Both hops use **Server-Sent Events (SSE)**.
+
+```text
+browser ──POST /api/chat──▶ Next.js route ──POST──▶ Gemini / Groq
+   ◀── event: token ────────────  ◀── data: {...} ──────
+```
+
+## How it works
+
+**SSE is plain text over a normal HTTP response** with `content-type: text/event-stream`. Each event is a few `field: value` lines ending in a blank line:
+
+```text
+event: token
+data: {"text":"Hello"}
+
+event: done
+data: {"totalMs":812}
+
+```
+
+Gemini sends `data:` lines only (the event name defaults to `message`). Groq's OpenAI-style stream ends with a literal `data: [DONE]` that isn't JSON, so the parser has to check for it before `JSON.parse`.
+
+**Chunks don't match events.** The network delivers bytes in whatever pieces it likes. One `read()` can contain half an event, or twenty events and the start of another. The parser keeps a buffer and only emits an event once its blank line has arrived. Two subtler traps:
+
+- A CRLF line ending can be split, with `\r` at the end of one chunk and `\n` at the start of the next. Read naively, that looks like an extra blank line.
+- A multi-byte UTF-8 character (₹, emoji) can be split across reads. `TextDecoder` needs `{ stream: true }` to hold the partial bytes.
+
+**Reading it in the browser.** `EventSource` is the built-in SSE client, but it only does GET. Sending a JSON body needs `fetch()` and reading `response.body` as a `ReadableStream`: call `reader.read()` in a loop, decode, and parse.
+
+**Cancellation.** The Stop button calls `AbortController.abort()`. That rejects the browser's `fetch`. The server sees the request's `signal` abort and aborts its own upstream `fetch`, so the provider stops generating and you stop paying. The partial answer is still saved, with `status: "stopped"`.
+
+**Back-pressure.** If the reader is slower than the writer, data has to wait somewhere. With the "slow network" toggle, the server finishes in about 1.6 s but the browser is still reading at 11 s. The bytes sit in the browser's buffer. Once the client falls behind, single reads start returning many events at once.
+
+## In this app
+
+- [`lib/sse/parser.ts`](https://github.com/JaydeepRamanuj/rag-x-ray/blob/main/lib/sse/parser.ts): the hand-written parser and `readSse()`, used on both the server and the client. Tests cover split events, split CRLFs and split UTF-8.
+- [`lib/sse/encoder.ts`](https://github.com/JaydeepRamanuj/rag-x-ray/blob/main/lib/sse/encoder.ts): formats events, plus headers that stop proxies from buffering (`no-transform`, `x-accel-buffering: no`).
+- [`app/api/chat/route.ts`](https://github.com/JaydeepRamanuj/rag-x-ray/blob/main/app/api/chat/route.ts): returns a `ReadableStream`, forwards tokens, and saves the run with `after()` so the database write never delays the stream.
+- [`lib/chat/client.ts`](https://github.com/JaydeepRamanuj/rag-x-ray/blob/main/lib/chat/client.ts): `streamChat()` is the browser side.
+
+## Try it
+
+Send a question in [Chat](/chat), then click **Inspect stream** under the answer. Replay it on Gemini, then on GPT-OSS 20B, then turn on **Slow network** and replay again.
+
+## What you should see
+
+- The wire log shows each network read and how many events it contained.
+- Gemini often delivers a short answer as one or two big text chunks. Groq sends one tiny chunk per word or two, at hundreds of tokens per second.
+- Gemini repeats `usageMetadata` on every chunk as a running total; Groq sends usage once, at the end. So a stopped Gemini stream still has token counts and a stopped Groq stream doesn't.
+- With slow network on, tokens/s drops and total time stretches, while the server-side numbers stay the same.
+
+## Interview angle
+
+- **"Why use SSE instead of WebSockets for LLM streaming?"** It's one-directional, which is all a response needs. It's plain HTTP, so it works through proxies and serverless platforms, and reconnection is built into `EventSource`. WebSockets are for two-way, long-lived channels.
+- **"How do you cancel a streaming request end to end?"** An `AbortController` on the client, the request's abort signal on the server, and passing that signal on to the upstream fetch.
+- **"What's TTFT and what affects it?"** The time until the first token arrives. Queueing, prompt length (the model must read all input first), thinking tokens, cold starts, and network distance all add to it.
+
+## Go deeper
+
+- [HTML spec: server-sent events](https://html.spec.whatwg.org/multipage/server-sent-events.html)
+- [MDN: using readable streams](https://developer.mozilla.org/en-US/docs/Web/API/Streams_API/Using_readable_streams)
+- [MDN: AbortController](https://developer.mozilla.org/en-US/docs/Web/API/AbortController)
+- [Groq: text chat and streaming](https://console.groq.com/docs/text-chat)
