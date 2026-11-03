@@ -2,6 +2,7 @@ import type { MDXComponents } from "mdx/types";
 
 import { diagrams } from "@/components/learn/diagrams";
 import { Figure } from "@/components/learn/figure";
+import { PipelineWalkthrough } from "@/components/learn/pipeline-walkthrough";
 import { Term } from "@/components/term";
 
 // Required by @next/mdx in the App Router. Lessons are loaded with a dynamic
@@ -19,6 +20,8 @@ const components: MDXComponents = {
   // <Figure alt="…" caption="…"> wraps an image or one of the diagrams below.
   Figure,
   ...diagrams,
+  // The animated walkthrough of one real run (Start here, Full pipeline).
+  PipelineWalkthrough,
   // Wide tables scroll on their own rather than stretching the lesson.
   table: (props) => (
     <div className="overflow-x-auto">
