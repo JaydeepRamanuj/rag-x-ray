@@ -13,6 +13,13 @@ question ─► embed ──► [Upstash cache] hit? skip the call
                                  └─► 429? wait for retry-after, then retry
 ```
 
+<Figure
+  alt="The pipeline question, embed, retrieve, prompt, LLM, answer, with three levers. One: skip the call; Upstash keeps each embedding keyed by text, model and task type, so a repeat question takes about 0.16 s instead of 1.1 s. Two: pay less; Gemini caches a repeated prompt prefix at $0.03 instead of $0.30 per million tokens, but RAG prompts barely repeat. Three: pace it; on a 429, wait for retry-after or back off with jitter, up to 4 attempts."
+  caption="The three levers from this lesson, attached to the stage each one acts on."
+>
+  <CostLeversDiagram />
+</Figure>
+
 ## How it works
 
 **Caching your own calls.** Embeddings are deterministic: the same text, model and task type always give the same vector. So the app keys each vector by a hash of those three things and stores it in Upstash Redis. Re-uploading a document re-embeds nothing, and asking the same question twice skips the query embedding (about 1.1 s down to 0.16 s). Cached calls never reach Google, so they don't count against the 1,000-requests-a-day embedding quota either. That's why the ledger's embedding chart counts only cache misses.

@@ -28,6 +28,13 @@ The `ORDER BY` must be the bare distance expression. Sort by the computed `score
 
 **Exact vs approximate search.** Exact search compares the query with every row: perfect recall, and cost that grows linearly. An **HNSW** index (Hierarchical Navigable Small World) builds a layered graph in which each vector links to its near neighbours. A search starts at the sparse top layer and greedily hops closer to the query, dropping a layer each time. It visits a tiny fraction of the rows, at the cost of occasionally missing a true neighbour. `hnsw.ef_search` (default 40) trades speed for recall at query time.
 
+<Figure
+  alt="Left: exact search draws a line from the query to each of 18 points and keeps the 5 nearest. Right: an HNSW index with three layers; the search enters at the sparse top layer, hops toward the query, drops a layer, hops again, and ends at the nearest point on layer 0, which holds every vector."
+  caption="Exact search touches every row; HNSW touches a few per layer. At this app's size, exact is faster: 0.16 ms for 18 chunks, against 10 ms with the index forced."
+>
+  <ExactVsHnswDiagram />
+</Figure>
+
 **Small tables don't use the index, and that's correct.** With 18 chunks, `EXPLAIN ANALYZE` showed Postgres scanning all rows and sorting them in **0.16 ms**. Forcing the HNSW index took **10 ms**. The planner chooses exact search until the table is big enough for the index to pay off. Meanwhile the app's "search" time reads 500 ms or so, and almost all of that is network round trips to Neon (~125 ms each), not the search itself.
 
 **One column per model.** Vectors from different models live in different spaces, so comparing them is meaningless. The `chunks` table has `embedding` (Gemini, 768 dims) and `embedding_local` (MiniLM, 384 dims, coming in Phase 4), each with its own index.

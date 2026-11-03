@@ -25,6 +25,13 @@ hit rate@5 = 3/4 = 0.75
 MRR        = (1 + 0.5 + 0 + 0.25) / 4 = 0.44
 ```
 
+<Figure
+  alt="Four questions, five rank slots each. Question 1's first hit is at rank 1, question 2's at rank 2, question 3 has no hit, question 4's is at rank 4. Hit rate at 5 is 3 out of 4, 0.75. The reciprocal ranks are 1, 0.5, 0 and 0.25, and their average, the MRR, is 0.44."
+  caption="Hit rate only asks whether the passage made the top 5. MRR also rewards putting it first."
+>
+  <HitRankDiagram />
+</Figure>
+
 **Faithfulness** asks whether every claim in the answer is supported by the retrieved sources. An answer can be true and still unfaithful, if it came from the model's own memory rather than the sources. **Answer relevance** asks whether the answer addresses the question. Each is graded 1–5 against a written rubric, with the judge's reasoning written before the score so the score has to follow from it.
 
 **LLM-as-a-judge pitfalls.** Judges favour longer answers, answers in their own style, and the first of two options; they're also lenient by default. Mitigations: a small fixed scale with a description of each score, reasoning before the score, temperature 0, and reading a sample of the judge's verdicts yourself.
