@@ -1,5 +1,7 @@
 import type { MDXComponents } from "mdx/types";
 
+import { diagrams } from "@/components/learn/diagrams";
+import { Figure } from "@/components/learn/figure";
 import { Term } from "@/components/term";
 
 // Required by @next/mdx in the App Router. Lessons are loaded with a dynamic
@@ -14,6 +16,9 @@ const components: MDXComponents = {
     ),
   // <Term id="…"> gives lessons the same hover definitions as the app.
   Term,
+  // <Figure alt="…" caption="…"> wraps an image or one of the diagrams below.
+  Figure,
+  ...diagrams,
   // Wide tables scroll on their own rather than stretching the lesson.
   table: (props) => (
     <div className="overflow-x-auto">
