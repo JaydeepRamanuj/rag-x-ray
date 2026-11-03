@@ -22,6 +22,8 @@ Every question
   question → turn into numbers → find the closest chunks → put them in the prompt → model writes the answer
 ```
 
+<PipelineWalkthrough />
+
 - **Chunks.** Documents are cut into passages of a few hundred words, so you can hand over just the relevant part. Where you cut matters: cut a definition in half and neither half may be found.
 - **Embeddings.** A model turns each chunk into a list of numbers (an <Term id="embedding" />) where similar meanings get similar numbers. "Cancel my order" and "I want a refund" end up close together even though they share no words.
 - **Search.** Your question is turned into numbers the same way, and the chunks with the closest numbers are fetched. That's <Term id="vector-search" />. Searching for the exact words too (<Term id="keyword-search" />) catches names and codes that the numbers blur.

@@ -10,6 +10,13 @@ A **reranker** does: it reads the question and one candidate side by side and sc
 all chunks ──(vector + keyword, ms)──▶ 20 candidates ──(cross-encoder, ~1 s)──▶ best 5
 ```
 
+<Figure
+  alt="All 64 chunks are narrowed by vector and keyword search, in milliseconds, to 20 candidates; Cohere's cross-encoder reorders those in about a second and the best 5 go to the prompt. Below: a bi-encoder embeds the question and the chunk separately and scores them with a dot product; a cross-encoder reads question and chunk together and returns a score from 0 to 1, one pass per candidate."
+  caption="Retrieval is cheap enough to run over every chunk; the reranker is accurate enough to trust with the final order. 64 is the size of this app's corpus in Lesson 13."
+>
+  <RerankFunnelDiagram />
+</Figure>
+
 ## How it works
 
 **Bi-encoder** (an embedding model): `score = embed(question) · embed(chunk)`. Chunk vectors are computed once at upload and indexed, so a search is a lookup. The catch is that everything about a chunk must be squeezed into one fixed vector before anyone knows the question.

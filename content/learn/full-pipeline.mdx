@@ -15,6 +15,8 @@ browser ──POST /api/chat──▶ route
   7. save the run                  Neon, after the response, with after()
 ```
 
+<PipelineWalkthrough />
+
 ## How it works
 
 The question was **"What does the HNSW index do, and why did Postgres ignore it here?"**, sent from a script to `/api/chat` with hybrid retrieval, rerank on, top 5, Gemini 3.5 Flash-Lite, and `debug: true` so every upstream frame came back too. It ran twice in a row: the first time nothing was cached, the second time the query embedding and the rerank were.
@@ -34,6 +36,13 @@ The question was **"What does the HNSW index do, and why did Postgres ignore it 
 | 7. Save the run                       | after the response           | after the response  |
 
 The three retrieval steps add up exactly to the "sources ready" time (869 + 557 + 975 = 2,401), because they run one after another: the reranker needs the search results, and vector search needs the query vector. Inside step 2, the vector and keyword queries run in parallel.
+
+<Figure
+  alt="Timeline of one question, sent twice. Cold cache: embed 869 ms, search 557 ms, rerank 975 ms, so sources are ready at 2,401 ms; then 766 ms waiting for the model's first token and 285 ms of writing, done at 3,459 ms. Cached: embed 49 ms, search 341 ms, rerank 65 ms, sources ready at 456 ms; then 792 ms to the first token and 210 ms of writing, done at 1,468 ms."
+  caption="The table above, drawn to scale. Caching shrinks embed and rerank to slivers; search (mostly the round trip to Neon) and the model's wait for its first token stay about the same."
+>
+  <PipelineTimingDiagram />
+</Figure>
 
 Both runs sent **1,910 input tokens**, about 95% of them sources, and cost about **$0.0008** at Flash-Lite's paid list price (₹0 on the free tier).
 

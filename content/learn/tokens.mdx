@@ -8,6 +8,13 @@ Models don't read characters or words; they read **tokens**, chunks of text from
 "Why is the sky blue?"  →  [Why] [ is] [ the] [ sky] [ blue] [?]   ≈ 6 tokens
 ```
 
+<Figure
+  alt="The sentence Why is the sky blue? split into six tokens: Why, space is, space the, space sky, space blue, question mark. Below, Gemini 3.5 Flash-Lite's paid prices per million tokens: input $0.30, output $2.50, about 8 times input."
+  caption="Each token carries the space before it. Output tokens cost several times more than input, so long answers and thinking are what make a call expensive."
+>
+  <TokenPillsDiagram />
+</Figure>
+
 ## How it works
 
 **Tokenisers are learned.** Byte-pair encoding (BPE) starts from bytes and repeatedly merges the most frequent pairs into new tokens until the vocabulary hits a target size (about 200,000 for GPT-OSS's `o200k`). Common English words become single tokens. Rare words, code, and most non-English scripts split into several. That's why the same text costs more in Hindi than in English.

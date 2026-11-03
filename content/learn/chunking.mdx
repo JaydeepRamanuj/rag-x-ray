@@ -9,6 +9,13 @@ document ─▶ [chunk 1][chunk 2][chunk 3] …   each ~400 tokens
                     └overlap┘
 ```
 
+<Figure
+  alt="A document of about 1,150 tokens cut into three chunks: tokens 0 to 400, 360 to 760, and 720 to 1,120. The 40 tokens where neighbouring chunks overlap are highlighted."
+  caption="The fixed strategy at the app's default settings: each chunk starts 40 tokens before the previous one ended. The other strategies move the cuts to paragraph or sentence boundaries, so their sizes vary."
+>
+  <ChunkOverlapDiagram />
+</Figure>
+
 There are four common ways to decide where the cuts go. They differ in what they respect: nothing (fixed), the text's layout (recursive), its sentences (sentence), or its meaning (semantic).
 
 ## How it works

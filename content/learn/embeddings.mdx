@@ -10,6 +10,13 @@ An **embedding** turns text into a list of numbers (a vector) so that texts with
 "Postgres supports JSONB columns."     → [-0.072, 0.044, -0.010, …]  far
 ```
 
+<Figure
+  alt="Three arrows from one origin, drawn on two of the 768 dimensions. Why is the sky blue? and Rayleigh scattering makes it blue. point in nearly the same direction, a small angle. Postgres supports JSONB columns. points far away, a wide angle."
+  caption="A sketch with the angles exaggerated. Real vectors have 768 dimensions, and in this app relevant chunks score about 0.70–0.77 against loosely related ones at 0.63–0.69."
+>
+  <EmbeddingAnglesDiagram />
+</Figure>
+
 ## How it works
 
 **A vector is a direction in a high-dimensional space.** Each of the 768 numbers is a coordinate. No single coordinate means "colour" or "database"; meaning is spread across all of them, learned by training the model to pull related texts together and push unrelated ones apart.

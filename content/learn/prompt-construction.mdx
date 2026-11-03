@@ -14,6 +14,13 @@ Retrieval finds the chunks, but the model only sees what the **prompt** gives it
    └ "Question: Are we using drizzle?"                                      ~10 tokens
 ```
 
+<Figure
+  alt="A bar of the prompt's input tokens, to scale: system 75, history 19, framing 7, five sources totalling 2,150, question 12. 2,260 tokens were billed, and sources are 95% of them."
+  caption="Gemini's own counts for one real run. The five sources are drawn as equal parts; only their total was measured."
+>
+  <PromptBudgetDiagram />
+</Figure>
+
 ## How it works
 
 **Grounding instructions.** Each line of the system prompt closes one failure mode: answering from general knowledge ("use only the numbered sources"), inventing citations ("only cite numbers that appear"), and guessing ("if the sources don't contain the answer, say so"). Change one line and re-run to see which failure comes back.

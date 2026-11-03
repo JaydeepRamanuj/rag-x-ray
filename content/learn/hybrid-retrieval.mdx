@@ -11,6 +11,13 @@ question ─┬─▶ vector search  (meaning)  ─▶ ranked list A ─┐
           └─▶ keyword search (words)    ─▶ ranked list B ─┴─▶ RRF ─▶ one list
 ```
 
+<Figure
+  alt="Vector search ranks chunks C, A, D, B; keyword search ranks A, E, C, F. RRF with k = 60 adds 1 over k plus rank for each list a chunk appears in. Fused order: A 0.0325 (V2, K1), C 0.0323 (V1, K3), E 0.0161, D 0.0159, B 0.0156, F 0.0156."
+  caption="Made-up chunks, real arithmetic. A and C were found by both searches, so they beat E and D, which were each found by only one."
+>
+  <RrfDiagram />
+</Figure>
+
 ## How it works
 
 ### Full-text search in Postgres

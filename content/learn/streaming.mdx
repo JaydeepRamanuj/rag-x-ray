@@ -11,6 +11,13 @@ browser ──POST /api/chat──▶ Next.js route ──POST──▶ Gemini /
    ◀── event: token ────────────  ◀── data: {...} ──────
 ```
 
+<Figure
+  alt="Sequence diagram with three columns: browser, Next.js route, Gemini or Groq. The browser POSTs to /api/chat; the route answers at once with event: start, then event: retrieval in RAG mode, then POSTs to the provider with streaming on. Each data frame from the provider is forwarded to the browser as event: token, and the stream ends with event: usage and done. Time to first token runs from the browser's POST to the first token event."
+  caption="Two separate SSE streams. Our route reads the provider's frames and re-sends them as its own events, so the browser never talks to Gemini or Groq directly."
+>
+  <StreamHopsDiagram />
+</Figure>
+
 ## How it works
 
 **SSE is plain text over a normal HTTP response** with `content-type: text/event-stream`. Each event is a few `field: value` lines ending in a blank line:

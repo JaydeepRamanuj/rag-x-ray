@@ -10,6 +10,13 @@ request:  [system: "Be concise."] [user: "Hi"] [assistant: "Hello!"] [user: "Why
 response: assistant: "Rayleigh scattering…"   usage: { in: 31, out: 12 }
 ```
 
+<Figure
+  alt="A request holding four messages, system: Be concise, user: Hi, assistant: Hello!, user: Why is the sky blue?, plus temperature 0.2 and max output 2,048, goes to a model with no memory. The response is one assistant message, Rayleigh scattering, with usage of 31 tokens in and 12 out. The next turn sends the whole list again with that answer added."
+  caption="The model keeps nothing between calls. The conversation lives in the list the client re-sends each turn."
+>
+  <ApiCallDiagram />
+</Figure>
+
 ## How it works
 
 **Roles.** The _system_ message sets behaviour for the whole conversation. _User_ and _assistant_ messages alternate. The model was trained on text formatted this way, so the roles are part of the prompt it actually sees, not metadata.
