@@ -10,7 +10,6 @@ import { RerankFunnelDiagram } from "./rerank-funnel";
 import { RrfDiagram } from "./rrf";
 import { StreamHopsDiagram } from "./stream-hops";
 import { TokenPillsDiagram } from "./token-pills";
-import { TwoFlowsDiagram } from "./two-flows";
 
 /** Every lesson diagram, registered by name in mdx-components.tsx. */
 export const diagrams = {
@@ -26,5 +25,4 @@ export const diagrams = {
   RrfDiagram,
   StreamHopsDiagram,
   TokenPillsDiagram,
-  TwoFlowsDiagram,
 };

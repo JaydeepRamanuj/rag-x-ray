@@ -15,6 +15,8 @@ browser ──POST /api/chat──▶ route
   7. save the run                  Neon, after the response, with after()
 ```
 
+<PipelineWalkthrough />
+
 ## How it works
 
 The question was **"What does the HNSW index do, and why did Postgres ignore it here?"**, sent from a script to `/api/chat` with hybrid retrieval, rerank on, top 5, Gemini 3.5 Flash-Lite, and `debug: true` so every upstream frame came back too. It ran twice in a row: the first time nothing was cached, the second time the query embedding and the rerank were.
