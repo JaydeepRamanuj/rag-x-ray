@@ -5,7 +5,7 @@ The lessons explain flows with text and ASCII sketches. This plan adds pictures,
 | Part | What                              | Status                     |
 | ---- | --------------------------------- | -------------------------- |
 | A    | Static figures in lessons         | Built, awaiting review     |
-| B    | Animated pipeline walkthrough     | After A                    |
+| B    | Animated pipeline walkthrough     | Built, awaiting review     |
 | C    | Simulations inside each lesson    | Deferred (kept for later)  |
 | D    | Replay a real run as an animation | Deferred (kept for later)  |
 
@@ -31,7 +31,7 @@ The two images in [`reference-images/`](./reference-images/README.md) are **refe
 
    | Lesson               | Diagram                  | Shows                                                         |
    | -------------------- | ------------------------ | ------------------------------------------------------------- |
-   | 0 Start here         | `TwoFlowsDiagram`        | ingestion and the question flow, meeting at the vector store  |
+   | 0 Start here         | `TwoFlowsDiagram` (retired in Part B) | ingestion and the question flow, meeting at the vector store  |
    | 1 LLM API call       | `ApiCallDiagram`         | message list in, one message and usage out; history re-sent   |
    | 2 Tokens             | `TokenPillsDiagram`      | the example sentence as 6 tokens; input vs output price       |
    | 3 Streaming          | `StreamHopsDiagram`      | the two SSE hops as a sequence diagram, with TTFT             |
@@ -58,6 +58,14 @@ A `<PipelineWalkthrough>` component: an SVG diagram of the app's pipeline with *
 - Shows both flows: indexing (document → chunks → vectors → store) and question → answer, joined at the vector store.
 - Keyboard: Space plays or pauses, arrow keys step.
 - Goes into Start here and Full pipeline, replacing their ASCII diagrams.
+
+**Built 4 Nov 2026** (`components/learn/pipeline-walkthrough.tsx`, branch `visuals-b-walkthrough`). Decided with Jd:
+
+- **ASCII sketches stay** (as in Part A). In Start here the walkthrough replaces Part A's `TwoFlowsDiagram`, which showed the same two flows and is deleted. In Full pipeline it sits under the ASCII sketch, and `PipelineTimingDiagram` stays further down.
+- **The real stages**, not the plan's simplified list: document → chunk → embed → vector store, then question → embed → search (vector ∥ keyword, RRF) → rerank 20 → 5 → prompt → model → answer. 11 steps.
+- **Cold-run timings as labels**, played at an even pace (2.6 s a stage, the answer at 45 ms a word), not in real time. Cold vs cached is left to the timing chart.
+- **Data** in `content/learn/example-run.ts`: run `0f59bf82…`, read once from Neon on 4 Nov 2026. Only the reranked top 5 are saved for a run, so the search step shows no per-candidate scores. Of those 5, only `retrieval-augmented-generation.md` is in `content/corpus/` (the others were uploaded through the app), so the indexing side follows that file: 3,467 tokens, 11 chunks.
+- **Reduced motion:** no Play and no transitions, the answer appears whole; Step, Back and Reset still work. **Phone:** below `sm` the diagram (unreadable at that size) becomes a segment per stage; the stage panel is unchanged.
 
 **Done when:** the walkthrough plays, pauses, steps and resets; shows a static diagram under reduced motion; works at phone width; is in both lessons; and the checks pass.
 
